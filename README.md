@@ -13,7 +13,17 @@
 In jeder frischen Debian/Ubuntu-LXC-Box als root:
 
 ```bash
+# Pre-Step (minimal-LXC-Templates haben kein curl vorinstalliert):
+apt update && apt install -y curl ca-certificates
+
+# firstboot.sh ausführen:
 bash <(curl -s https://ccc.xed.dev/firstboot.sh)
+```
+
+Oder als One-Liner:
+
+```bash
+apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates && bash <(curl -s https://ccc.xed.dev/firstboot.sh)
 ```
 
 Das setzt **Zeitzone, Locales, Default-Editor und Basis-Pakete** — alles via Whiptail-TUI im Debian-Installer-Stil. Idempotent: kann beliebig oft wiederholt werden.

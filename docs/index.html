@@ -85,7 +85,15 @@
 
 <p>In jeder frischen Debian/Ubuntu-LXC-Box als root:</p>
 
-<pre><code>bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)</code></pre>
+<pre><code><span style="color:var(--muted)"># Pre-Step (minimal-LXC-Templates haben kein curl vorinstalliert):</span>
+apt update &amp;&amp; apt install -y curl ca-certificates
+
+<span style="color:var(--muted)"># firstboot.sh ausführen:</span>
+bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)</code></pre>
+
+<p>Oder als One-Liner:</p>
+
+<pre><code>apt-get update -qq &amp;&amp; apt-get install -y -qq --no-install-recommends curl ca-certificates &amp;&amp; bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)</code></pre>
 
 <p>
   Setzt <strong>Zeitzone, Locales, Default-Editor und Basis-Pakete</strong> per

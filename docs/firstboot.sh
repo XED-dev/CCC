@@ -2,8 +2,19 @@
 # firstboot.sh — XED-CCC Bash-Basis-Setup für frische Debian/Ubuntu-Boxen
 #
 # Quelle:    https://github.com/XED-dev/CCC
-# Aufruf:    bash <(curl -s https://ccc.xed.dev/firstboot.sh)
+#
+# Aufruf auf frischen Debian/Ubuntu-LXC-Boxen (Pre-Step nötig — minimal-Templates
+# haben kein curl vorinstalliert):
+#
+#   apt update && apt install -y curl ca-certificates
+#   bash <(curl -s https://ccc.xed.dev/firstboot.sh)
+#
+# Oder als One-Liner:
+#   apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+#     curl ca-certificates && bash <(curl -s https://ccc.xed.dev/firstboot.sh)
+#
 # Lokal:     bash firstboot.sh
+#
 # Non-Tty:   TZ=UTC LOCALES="de_AT.UTF-8 en_US.UTF-8" \
 #              DEFAULT_LOCALE=de_AT.UTF-8 \
 #              bash <(curl -s https://ccc.xed.dev/firstboot.sh)
