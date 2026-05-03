@@ -76,9 +76,11 @@
 </h1>
 
 <p>
-  <span class="badge">Stufe 1: <code>firstboot.sh</code> live</span>
+  <span class="badge"><code>firstboot.sh</code> v0.7.0</span>
+  <span class="badge"><code>ccc</code> v0.0.1</span>
   <span class="badge">MIT</span>
   <span class="badge"><a href="https://github.com/XED-dev/CCC">GitHub</a></span>
+  <span class="badge"><a href="https://pypi.org/project/xed-ccc/">PyPI</a></span>
 </p>
 
 <h2>Schnellstart</h2>
@@ -129,7 +131,9 @@ bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)</code></pre>
     <tr><td>3</td><td>Locales generieren + Default-Locale (<code>update-locale</code> → <code>/etc/default/locale</code>)</td></tr>
     <tr><td>4</td><td>Basis-Pakete installieren (<code>--no-install-recommends</code>)</td></tr>
     <tr><td>5</td><td><code>EDITOR=nano</code> in <code>/etc/environment</code> (idempotent via grep-vor-write)</td></tr>
-    <tr><td>6</td><td>Abschluss-Banner</td></tr>
+    <tr><td>5b</td><td>Optional: <code>apt dist-upgrade + autoremove + autoclean</code> (Yesno)</td></tr>
+    <tr><td><strong>7</strong></td><td><strong>XED /CCC Python-Tool installieren</strong> (Yesno) — apt python3-Stack + git clone + venv + symlink <code>/usr/local/bin/ccc</code></td></tr>
+    <tr><td>8</td><td>Abschluss-Banner + Marker-Datei</td></tr>
   </tbody>
 </table>
 
@@ -139,18 +143,70 @@ bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)</code></pre>
   separates Skript für cBUZZ-Outer-Container.
 </p>
 
-<h2>Roadmap</h2>
+<h2>Phase 2 — <code>ccc</code> (Python-Tool, ab v0.0.1)</h2>
+
+<p>
+  Nach <code>firstboot.sh</code> kommt das Python-Tool für
+  <strong>Rollen-Konfiguration</strong> — Pendant zu <code>pct</code> aus
+  Proxmox, aber innerhalb der LXC-Box laufend.
+</p>
+
+<h3>Installation (zwei Wege)</h3>
+
+<pre><code><span style="color:var(--muted)"># Variante A — automatisch via firstboot.sh Phase 7 (empfohlen für frische Boxen).
+#   firstboot.sh fragt nach ccc-Installation, klont Repo nach /opt/xed-ccc/,
+#   baut venv und symlinkt /usr/local/bin/ccc in einem Schritt.</span>
+
+<span style="color:var(--muted)"># Variante B — PyPI (für SysOps die Python kennen, bestehende Boxen):</span>
+pipx install xed-ccc      <span style="color:var(--muted)"># isolierte Tool-Installation (empfohlen)</span>
+pip install xed-ccc       <span style="color:var(--muted)"># System-Python (mit pep668-bypass)</span></code></pre>
+
+<h3>Updates</h3>
+
+<pre><code><span style="color:var(--muted)"># Variante A — firstboot.sh Re-Run (Phase 7 macht fetch+reset im /opt/xed-ccc/):</span>
+bash &lt;(curl -s https://ccc.xed.dev/firstboot.sh)
+
+<span style="color:var(--muted)"># Variante B — pipx-Pfad:</span>
+pipx upgrade xed-ccc
+
+<span style="color:var(--muted)"># Geplant — Self-Update als Python-Verb:</span>
+ccc update</code></pre>
+
+<h3>Verben (analog <code>pct</code>)</h3>
+
+<pre><code>ccc list                  <span style="color:var(--muted)"># verfügbare Rollen mit Status</span>
+ccc create pmDESK         <span style="color:var(--muted)"># Rolle in aktueller Box installieren</span>
+ccc create pmDESK --dry-run  <span style="color:var(--muted)"># nur Plan zeigen</span>
+ccc menu                  <span style="color:var(--muted)"># interaktive TUI (Stub, Textual kommt später)</span>
+ccc --version
+ccc --help</code></pre>
+
+<h3>Rollen-Roadmap</h3>
 
 <table>
   <thead>
-    <tr><th>Skript</th><th>Zweck</th><th>Status</th></tr>
+    <tr><th>Rolle</th><th>Beschreibung</th><th>Status</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>firstboot.sh</code></td><td>Basis-Setup für jede frische Debian/Ubuntu-Box</td><td>Stufe 1, live</td></tr>
+    <tr><td><code>pmDESK</code></td><td>Debian/Ubuntu Gnome-Desktop (xrdp + Gnome-Stack)</td><td>Stub (Plan)</td></tr>
+    <tr><td><code>lxcHOST</code></td><td>Firewall + Public-IP + Outer-Container für nested LXC</td><td>geplant</td></tr>
+    <tr><td><code>osNGINX</code></td><td>Reverse-Proxy + WordOps</td><td>geplant</td></tr>
+    <tr><td><code>commBOX</code></td><td>Communication-Stack (Mail, DNS, Webmail)</td><td>geplant</td></tr>
+  </tbody>
+</table>
+
+<h2>Roadmap (Skripte + Werkzeuge)</h2>
+
+<table>
+  <thead>
+    <tr><th>Komponente</th><th>Zweck</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>firstboot.sh</code></td><td>Basis-Setup + ccc-Self-Install (Phase 7)</td><td><strong>v0.7.0 live</strong></td></tr>
+    <tr><td><code>ccc</code> (Python)</td><td>CLI als Pendant zu <code>pct</code> (Typer + Rich)</td><td><strong>v0.0.1 Skelett live</strong></td></tr>
     <tr><td><code>lxc-host-setup.sh</code></td><td>Outer-Container vorbereiten (Bridge, iptables, nested LXC)</td><td>geplant</td></tr>
-    <tr><td><code>ccc-create.sh</code></td><td>Inner-Container provisionieren (Bash v1)</td><td>geplant</td></tr>
-    <tr><td><code>ccc</code> (Python)</td><td>CLI als Pendant zu <code>pct</code> (Typer + Pydantic)</td><td>geplant</td></tr>
-    <tr><td><code>ccc-tui</code> (Python)</td><td>Textual-TUI als Pendant zum Proxmox-Webinterface</td><td>geplant</td></tr>
+    <tr><td><code>ccc-tui</code> (Python, Textual)</td><td>TUI als Pendant zum Proxmox-Webinterface</td><td>geplant</td></tr>
+    <tr><td><code>ccc</code> REST-API</td><td>FastAPI-Schnittstelle für AI-Agent-Integration</td><td>Phase 3</td></tr>
   </tbody>
 </table>
 
