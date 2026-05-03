@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.7.1"
+VERSION="0.7.2"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -833,19 +833,36 @@ apply_ccc_installation() {
     # --- Schritt 4: Symlink ---
     ln -sf "${CCC_VENV_DIR}/bin/ccc" "$CCC_BIN_LINK"
 
-    # --- Schritt 4b: PATH-Fix ---
-    # `pct enter` startet eine Shell mit minimal-PATH (/sbin:/bin:/usr/sbin:/usr/bin)
-    # ohne /usr/local/bin → Symlink wäre nicht aufrufbar. Fix: profile.d-Snippet
-    # für Login-Shells UND /etc/environment für PAM-Sessions.
+    # --- Schritt 4b: PATH-Fix (zwei Stellen für volle Shell-Abdeckung) ---
+    # `pct enter` startet eine NON-LOGIN interactive bash mit minimal-PATH
+    # (/sbin:/bin:/usr/sbin:/usr/bin) ohne /usr/local/bin. Daher MUSS der
+    # PATH-Fix in /etc/bash.bashrc rein (interactive non-login bash liest das).
+    # Profile.d zusätzlich für Login-Shells (ssh, su -, bash -l).
     cat > /etc/profile.d/xed-ccc.sh <<'EOF'
-# XED-CCC: stelle sicher dass /usr/local/bin im PATH ist
+# XED-CCC: stelle sicher dass /usr/local/bin im PATH ist (Login-Shells).
 case ":$PATH:" in
     *":/usr/local/bin:"*) ;;
     *) export PATH="/usr/local/bin:$PATH" ;;
 esac
 EOF
     chmod 0644 /etc/profile.d/xed-ccc.sh
-    info "PATH-Fix installiert: /etc/profile.d/xed-ccc.sh"
+    info "PATH-Fix Login-Shells: /etc/profile.d/xed-ccc.sh"
+
+    # /etc/bash.bashrc-Append (interactive non-login bash, z.B. pct enter)
+    if ! grep -q '# XED-CCC PATH-Fix' /etc/bash.bashrc 2>/dev/null; then
+        cat >> /etc/bash.bashrc <<'EOF'
+
+# XED-CCC PATH-Fix (interactive non-login bash, z.B. pct enter)
+# Login-Shells nutzen /etc/profile.d/xed-ccc.sh
+case ":$PATH:" in
+    *":/usr/local/bin:"*) ;;
+    *) export PATH="/usr/local/bin:$PATH" ;;
+esac
+EOF
+        info "PATH-Fix interactive bash: /etc/bash.bashrc-Append"
+    else
+        info "PATH-Fix /etc/bash.bashrc-Block bereits vorhanden — kein Append."
+    fi
 
     # --- Schritt 5: Smoke-Test ---
     if "$CCC_BIN_LINK" --version >/dev/null 2>&1; then
