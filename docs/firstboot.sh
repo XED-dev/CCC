@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.4.0"
+VERSION="0.4.1"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -53,6 +53,11 @@ LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
 # gegen versehentliche Deinstallation von System-Paketen.
 PKG_MENU_LIST="htop curl wget sudo psmisc net-tools iproute2 iputils-ping gnupg nano pwgen socat"
+
+# Locales, die im Whiptail-Menü angeboten werden (für deselect=disable-Diff).
+# Locales ausserhalb dieser Liste bleiben unangetastet — User-eigene Custom-Locales
+# in /etc/locale.gen werden nicht angefasst.
+LOCALE_MENU_LIST="de_AT.UTF-8 de_DE.UTF-8 de_CH.UTF-8 en_US.UTF-8 en_GB.UTF-8 fr_FR.UTF-8 it_IT.UTF-8 es_ES.UTF-8"
 
 # Konfigurations-Variablen, gefüllt durch Phase 1
 TZ_VALUE=""
@@ -511,18 +516,54 @@ apply_timezone() {
 # === Phase 3 — Locales ===
 
 apply_locales() {
-    info "Locales generieren: $LOCALES_VALUE"
+    # Diff-Logik analog apply_packages:
+    #   to_enable  = in LOCALES_VALUE, aber nicht aktiv in /etc/locale.gen
+    #   to_disable = in LOCALE_MENU_LIST + aktiv, aber nicht in LOCALES_VALUE
+    #                (nur Menü-Locales — User-eigene Custom-Locales bleiben unangetastet)
+    local to_enable=""
+    local to_disable=""
+    local loc pattern
+
     for loc in $LOCALES_VALUE; do
-        # Pattern für sed: Punkte escapen
-        local pattern="${loc//./\\.}"
-        if grep -qE "^#?[[:space:]]*${pattern}[[:space:]]+UTF-8" /etc/locale.gen 2>/dev/null; then
-            # vorhanden (commented oder uncommented) — uncomment
-            sed -i "s/^# *\\(${pattern}[[:space:]]\\+UTF-8\\)/\\1/" /etc/locale.gen
-        else
-            # nicht in /etc/locale.gen vorhanden — append
-            echo "$loc UTF-8" >> /etc/locale.gen
+        if ! locale_is_active "$loc"; then
+            to_enable="$to_enable $loc"
         fi
     done
+
+    for loc in $LOCALE_MENU_LIST; do
+        if locale_is_active "$loc"; then
+            if ! echo " $LOCALES_VALUE " | grep -qw "$loc"; then
+                to_disable="$to_disable $loc"
+            fi
+        fi
+    done
+
+    # --- Enable-Phase (uncomment + bei Bedarf append) ---
+    if [ -n "${to_enable// /}" ]; then
+        info "Locales aktivieren:$to_enable"
+        for loc in $to_enable; do
+            pattern="${loc//./\\.}"
+            if grep -qE "^#?[[:space:]]*${pattern}[[:space:]]+UTF-8" /etc/locale.gen 2>/dev/null; then
+                # vorhanden (commented) — uncomment
+                sed -i "s/^# *\\(${pattern}[[:space:]]\\+UTF-8\\)/\\1/" /etc/locale.gen
+            else
+                # nicht in /etc/locale.gen vorhanden — append
+                echo "$loc UTF-8" >> /etc/locale.gen
+            fi
+        done
+    else
+        info "Alle gewünschten Locales bereits aktiv — kein Enable."
+    fi
+
+    # --- Disable-Phase (comment-out, kein extra-Confirm — User-Wille im Menü ist klar) ---
+    if [ -n "${to_disable// /}" ]; then
+        info "Locales deaktivieren:$to_disable"
+        for loc in $to_disable; do
+            pattern="${loc//./\\.}"
+            # Nur uncommented-Zeilen kommentieren; bereits commented-Zeilen sind no-op
+            sed -i "s/^\\(${pattern}[[:space:]]\\+UTF-8\\)/# \\1/" /etc/locale.gen
+        done
+    fi
 
     locale-gen </dev/null >/dev/null 2>&1
     update-locale LANG="$DEFAULT_LOCALE_VALUE" LC_CTYPE="$DEFAULT_LOCALE_VALUE"
