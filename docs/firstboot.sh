@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.7.4"
+VERSION="0.8.0"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -64,6 +64,20 @@ CCA_INSTALL_DIR="/opt/xed-cca"
 CCA_VENV_DIR="${CCA_INSTALL_DIR}/.venv"
 CCA_BIN_LINK="/usr/local/bin/cca"
 CCA_REPO_URL="https://github.com/XED-dev/CCA.git"
+
+# pipx-System-Setup (Phase 7+7b ab v0.8.0 — pipx-basierte CLI-Tool-Distribution)
+# Statt git-clone + manueller venv: pipx zieht xed-ccc + xed-cca von PyPI in
+# isolierte venvs unter $PIPX_HOME, mit Symlinks in $PIPX_BIN_DIR.
+# Update-Pfad: pipx upgrade xed-ccc xed-cca.
+# Self-Heal-Pfad: pipx reinstall xed-ccc.
+# Pattern: reference_pipx_for_cli_tools.md (AI036, 2026-05-04).
+PIPX_HOME_DIR="/opt/pipx"
+PIPX_BIN_DIR_PATH="/usr/local/bin"
+
+# Snap-Redirect-Pakete auf Ubuntu 22.04+ — bricht im LXC ohne snapd.
+# Wird im self_heal_dpkg() purgiert vor jedem apt-Aufruf in Phase 7.
+# Pattern: reference_no_snap_in_lxc.md (AI036, 2026-05-04).
+SNAP_REDIRECT_PACKAGES_LIST="firefox thunderbird chromium-browser gnome-software-plugin-snap snapd"
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -795,16 +809,67 @@ apply_editor() {
 
 # === Phase 6 — Abschluss ===
 
-# === Phase 7 — XED /CCC Python-Tool-Installation (self-contained) ===
+# === Phase 7 — XED /CCC Python-Tool-Installation (pipx-basiert ab v0.8.0) ===
 #
-# Direkt-Integration der ccc-Installation in firstboot.sh — kein Sub-Aufruf
-# von install-ccc.sh mehr. Eine Bash-Datei für die ganze Box-Basis,
-# danach ist alles Python.
+# pipx-basierte CLI-Tool-Distribution: jedes Tool in eigener venv unter
+# /opt/pipx/venvs/, mit Symlink in /usr/local/bin/. Mainstream-Pattern für
+# CLI-Tool-Distribution (uv, ruff, black, yt-dlp).
 #
-# Updates des Python-Tools: nicht via Bash, sondern via:
-#   pipx upgrade xed-ccc                   (PyPI-Pfad, falls so installiert)
-#   ccc update                             (geplant, Python-Self-Update-Verb)
-#   cd /opt/xed-ccc && git fetch + reset   (manuell, Power-User)
+# Updates:   pipx upgrade xed-ccc xed-cca
+# Self-Heal: pipx reinstall xed-ccc / xed-cca
+#
+# Migration v0.7.x -> v0.8.x: alte Symlinks /usr/local/bin/{ccc,cca} werden
+# nach .replaced.<timestamp> umbenannt (no-rm-Disziplin); alte
+# /opt/xed-ccc + /opt/xed-cca Verzeichnisse bleiben liegen, manueller
+# Cleanup durch DevOps wenn gewünscht.
+#
+# Pattern: reference_pipx_for_cli_tools.md (AI036, 2026-05-04).
+
+# Self-Heal-Helper: heilt broken dpkg-state vor apt-Aufrufen.
+# Snap-Redirect-Pakete (firefox/thunderbird/chromium) auf Ubuntu 22.04+
+# bricht im LXC ohne snapd. Idempotent: no-op auf sauberem System,
+# voll-aktiv auf broken System (z.B. nach v0.0.2-Bruch).
+# Pattern: reference_no_snap_in_lxc.md.
+self_heal_dpkg() {
+    info "Self-Heal: snap-Redirect-Pakete entfernen (LXC-Kompatibilität)..."
+    # shellcheck disable=SC2086 # PACKAGE_LIST bewusst ungequotet (mehrere Pakete)
+    apt-get purge -y -qq ${SNAP_REDIRECT_PACKAGES_LIST} 2>/dev/null || true
+
+    info "Self-Heal: dpkg --configure -a..."
+    dpkg --configure -a 2>/dev/null || true
+
+    info "Self-Heal: apt-get install -f..."
+    apt-get install -f -y -qq </dev/null
+
+    info "Self-Heal: apt-get autoremove --purge..."
+    apt-get autoremove --purge -y -qq </dev/null
+}
+
+# Migration alter Symlink (v0.7.x git+venv -> v0.8.x pipx).
+# Wenn ein Symlink nicht auf $PIPX_HOME_DIR zeigt, umbenennen via mv-replaced.
+# Idempotent: no-op wenn Symlink schon auf pipx-Pfad zeigt.
+migrate_old_symlink() {
+    local link="$1"
+    if [ -L "$link" ]; then
+        local target
+        target=$(readlink -f "$link" 2>/dev/null || echo "")
+        case "$target" in
+            "${PIPX_HOME_DIR}"/*) ;;
+            "")
+                local ts
+                ts=$(date +%Y%m%d-%H%M%S)
+                mv "$link" "${link}.replaced.${ts}"
+                info "Defekten Symlink umbenannt: ${link}.replaced.${ts}"
+                ;;
+            *)
+                local ts
+                ts=$(date +%Y%m%d-%H%M%S)
+                mv "$link" "${link}.replaced.${ts}"
+                info "Alter Symlink umbenannt: ${link}.replaced.${ts}"
+                ;;
+        esac
+    fi
+}
 
 apply_ccc_installation() {
     local confirm="no"
@@ -824,49 +889,34 @@ apply_ccc_installation() {
         return 0
     fi
 
-    # --- Schritt 1: Python-Stack + git ---
-    info "Python-Stack installieren (python3, python3-venv, git)..."
-    apt-get install -y -qq --no-install-recommends \
-        python3 python3-venv git </dev/null
-    ok "Python-Stack bereit: $(python3 --version 2>&1)"
+    # --- Schritt 0: Self-Heal-dpkg vor jedem apt-Aufruf ---
+    self_heal_dpkg
 
-    # --- Schritt 2: Repo klonen oder Update ---
-    if [ -d "${CCC_INSTALL_DIR}/.git" ]; then
-        info "ccc-Repo Update via fetch + reset --hard..."
-        git -C "$CCC_INSTALL_DIR" fetch --quiet origin main
-        git -C "$CCC_INSTALL_DIR" reset --hard --quiet origin/main
+    # --- Schritt 1: pipx via apt ---
+    info "pipx installieren (apt)..."
+    apt-get install -y -qq pipx </dev/null
+    ok "pipx bereit: $(pipx --version 2>&1)"
+
+    # --- Schritt 2: System-wide pipx-Setup via env-vars ---
+    export PIPX_HOME="$PIPX_HOME_DIR"
+    export PIPX_BIN_DIR="$PIPX_BIN_DIR_PATH"
+
+    # --- Schritt 3: Migration alter Symlink (v0.7.x -> v0.8.x) ---
+    migrate_old_symlink "$CCC_BIN_LINK"
+
+    # --- Schritt 4: pipx install/upgrade (idempotent) ---
+    info "xed-ccc via pipx installieren/aktualisieren..."
+    if pipx list --short 2>/dev/null | grep -q '^xed-ccc '; then
+        pipx upgrade xed-ccc
     else
-        info "ccc-Repo klonen nach ${CCC_INSTALL_DIR}..."
-        # no-rm-Disziplin: bestehendes Verzeichnis (ohne .git) sichern via mv
-        if [ -d "$CCC_INSTALL_DIR" ]; then
-            local ts
-            ts=$(date +%Y%m%d-%H%M%S)
-            mv "$CCC_INSTALL_DIR" "${CCC_INSTALL_DIR}.replaced.${ts}"
-            info "Bestehendes Verzeichnis gesichert: ${CCC_INSTALL_DIR}.replaced.${ts}"
-        fi
-        mkdir -p "$(dirname "$CCC_INSTALL_DIR")"
-        git clone --quiet --depth 1 "$CCC_REPO_URL" "$CCC_INSTALL_DIR"
+        pipx install xed-ccc
     fi
-    ok "Repo bereit: commit $(git -C "$CCC_INSTALL_DIR" rev-parse --short HEAD)"
 
-    # --- Schritt 3: venv erstellen oder updaten ---
-    if [ -x "${CCC_VENV_DIR}/bin/python3" ]; then
-        info "venv existiert — pip + xed-ccc updaten..."
-    else
-        info "venv erstellen in ${CCC_VENV_DIR}..."
-        python3 -m venv "$CCC_VENV_DIR"
-    fi
-    "${CCC_VENV_DIR}/bin/pip" install --quiet --upgrade pip </dev/null
-    "${CCC_VENV_DIR}/bin/pip" install --quiet -e "$CCC_INSTALL_DIR" </dev/null
-
-    # --- Schritt 4: Symlink ---
-    ln -sf "${CCC_VENV_DIR}/bin/ccc" "$CCC_BIN_LINK"
-
-    # --- Schritt 4b: PATH-Fix (zwei Stellen für volle Shell-Abdeckung) ---
+    # --- Schritt 5: PATH-Fix (zwei Stellen für volle Shell-Abdeckung) ---
+    # Bleibt zwingend drin: pct-enter-Falle ist unabhängig von pipx.
     # `pct enter` startet eine NON-LOGIN interactive bash mit minimal-PATH
-    # (/sbin:/bin:/usr/sbin:/usr/bin) ohne /usr/local/bin. Daher MUSS der
-    # PATH-Fix in /etc/bash.bashrc rein (interactive non-login bash liest das).
-    # Profile.d zusätzlich für Login-Shells (ssh, su -, bash -l).
+    # (/sbin:/bin:/usr/sbin:/usr/bin) ohne /usr/local/bin. Daher braucht
+    # /etc/bash.bashrc den PATH-Fix. Profile.d zusätzlich für Login-Shells.
     cat > /etc/profile.d/xed-ccc.sh <<'EOF'
 # XED-CCC: stelle sicher dass /usr/local/bin im PATH ist (Login-Shells).
 case ":$PATH:" in
@@ -893,13 +943,13 @@ EOF
         info "PATH-Fix /etc/bash.bashrc-Block bereits vorhanden — kein Append."
     fi
 
-    # --- Schritt 5: Smoke-Test ---
+    # --- Schritt 6: Smoke-Test ---
     if "$CCC_BIN_LINK" --version >/dev/null 2>&1; then
-        ok "ccc installiert: $(${CCC_BIN_LINK} --version 2>&1 | head -1)"
+        ok "ccc installiert: $($CCC_BIN_LINK --version 2>&1 | head -1)"
     else
-        err "ccc installiert, aber 'ccc --version' liefert non-zero. Diagnose:"
+        err "ccc installiert via pipx, aber 'ccc --version' liefert non-zero."
         err "  ls -la $CCC_BIN_LINK"
-        err "  $CCC_BIN_LINK --version"
+        err "  pipx list"
         return 1
     fi
 
@@ -908,14 +958,15 @@ EOF
     info "  ccc list                # verfügbare Rollen"
     info "  ccc create pmDESK       # Beispiel: Gnome-Desktop installieren"
     info ""
-    info "Falls 'ccc' nach Re-Login nicht gefunden wird:"
-    info "  /usr/local/bin/ccc list  (vollqualifiziert) oder PATH manuell ergänzen"
+    info "Updates:    pipx upgrade xed-ccc"
+    info "Self-Heal:  pipx reinstall xed-ccc"
 }
 
-# === Phase 7b — XED /CCA App-Tool-Installation ===
+# === Phase 7b — XED /CCA App-Tool-Installation (pipx-basiert ab v0.8.0) ===
 #
 # Läuft NUR wenn ccc bereits installiert ist (User hat im Phase-7-Yesno
 # „yes" gewählt). Beide Tools werden zusammen installiert oder gar nicht.
+# pipx-Stack ist bereits durch Phase 7 installiert, daher kein apt hier.
 
 apply_cca_installation() {
     # Skip wenn ccc nicht installiert (= User hat in Phase 7 No gewählt)
@@ -928,42 +979,26 @@ apply_cca_installation() {
     info "  Phase 7b: cca (App-Tool) installieren"
     info "==============================================================="
 
-    # --- Schritt 1: Repo klonen oder Update ---
-    if [ -d "${CCA_INSTALL_DIR}/.git" ]; then
-        info "cca-Repo Update via fetch + reset --hard..."
-        git -C "$CCA_INSTALL_DIR" fetch --quiet origin main
-        git -C "$CCA_INSTALL_DIR" reset --hard --quiet origin/main
-    else
-        info "cca-Repo klonen nach ${CCA_INSTALL_DIR}..."
-        if [ -d "$CCA_INSTALL_DIR" ]; then
-            local ts
-            ts=$(date +%Y%m%d-%H%M%S)
-            mv "$CCA_INSTALL_DIR" "${CCA_INSTALL_DIR}.replaced.${ts}"
-            info "Bestehendes Verzeichnis gesichert: ${CCA_INSTALL_DIR}.replaced.${ts}"
-        fi
-        mkdir -p "$(dirname "$CCA_INSTALL_DIR")"
-        git clone --quiet --depth 1 "$CCA_REPO_URL" "$CCA_INSTALL_DIR"
-    fi
-    ok "cca-Repo bereit: commit $(git -C "$CCA_INSTALL_DIR" rev-parse --short HEAD)"
+    # --- Schritt 1: pipx-Setup (gleicher PIPX_HOME wie Phase 7) ---
+    export PIPX_HOME="$PIPX_HOME_DIR"
+    export PIPX_BIN_DIR="$PIPX_BIN_DIR_PATH"
 
-    # --- Schritt 2: venv erstellen oder updaten ---
-    if [ -x "${CCA_VENV_DIR}/bin/python3" ]; then
-        info "cca-venv existiert — pip + xed-cca updaten..."
-    else
-        info "cca-venv erstellen in ${CCA_VENV_DIR}..."
-        python3 -m venv "$CCA_VENV_DIR"
-    fi
-    "${CCA_VENV_DIR}/bin/pip" install --quiet --upgrade pip </dev/null
-    "${CCA_VENV_DIR}/bin/pip" install --quiet -e "$CCA_INSTALL_DIR" </dev/null
+    # --- Schritt 2: Migration alter Symlink (v0.7.x -> v0.8.x) ---
+    migrate_old_symlink "$CCA_BIN_LINK"
 
-    # --- Schritt 3: Symlink ---
-    ln -sf "${CCA_VENV_DIR}/bin/cca" "$CCA_BIN_LINK"
+    # --- Schritt 3: pipx install/upgrade (idempotent) ---
+    info "xed-cca via pipx installieren/aktualisieren..."
+    if pipx list --short 2>/dev/null | grep -q '^xed-cca '; then
+        pipx upgrade xed-cca
+    else
+        pipx install xed-cca
+    fi
 
     # --- Schritt 4: Smoke-Test ---
     if "$CCA_BIN_LINK" --version >/dev/null 2>&1; then
-        ok "cca installiert: $(${CCA_BIN_LINK} --version 2>&1 | head -1)"
+        ok "cca installiert: $($CCA_BIN_LINK --version 2>&1 | head -1)"
     else
-        err "cca installiert, aber 'cca --version' liefert non-zero."
+        err "cca installiert via pipx, aber 'cca --version' liefert non-zero."
         return 1
     fi
 
@@ -971,6 +1006,9 @@ apply_cca_installation() {
     info "  cca --help              # alle Verben"
     info "  cca list                # verfügbare Apps"
     info "  cca install gnome       # Beispiel: Vanilla Gnome installieren"
+    info ""
+    info "Updates:    pipx upgrade xed-cca"
+    info "Self-Heal:  pipx reinstall xed-cca"
 }
 
 # === Phase 8 — Abschluss ===
