@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.7.3"
+VERSION="0.7.4"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -92,10 +92,34 @@ banner() {
     echo
 }
 
-err()  { echo "ERROR: $*" >&2; }
-info() { echo "→ $*"; }
-ok()   { echo "✔ $*"; }
-warn() { echo "⚠ $*" >&2; }
+# Output-Helper schreiben optional zusätzlich in $PHASE_LOG_FILE, wenn diese
+# Variable gesetzt ist. Wird in main() zwischen Phase 7 und finish gesetzt,
+# damit der Phase-7+7b-Log am Ende in einer Whiptail-msgbox konserviert
+# werden kann (Support-Wunsch). Andere Phasen bleiben unverlogged.
+err()  {
+    echo "ERROR: $*" >&2
+    if [ -n "${PHASE_LOG_FILE:-}" ]; then
+        echo "ERROR: $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
+    fi
+}
+info() {
+    echo "→ $*"
+    if [ -n "${PHASE_LOG_FILE:-}" ]; then
+        echo "→ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
+    fi
+}
+ok()   {
+    echo "✔ $*"
+    if [ -n "${PHASE_LOG_FILE:-}" ]; then
+        echo "✔ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
+    fi
+}
+warn() {
+    echo "⚠ $*" >&2
+    if [ -n "${PHASE_LOG_FILE:-}" ]; then
+        echo "⚠ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
+    fi
+}
 
 # === Idempotenz-Helper ===
 
@@ -993,8 +1017,22 @@ main() {
     apply_packages
     apply_dist_upgrade_prompt
     apply_editor
+
+    # Phase 7+7b: Log-Konservierung für Support. info/ok/err/warn schreiben
+    # bei gesetztem $PHASE_LOG_FILE zusätzlich dorthin. Am Ende: msgbox.
+    PHASE_LOG_FILE="/tmp/xed-firstboot-phase7-$$.log"
+    : > "$PHASE_LOG_FILE"
+
     apply_ccc_installation
     apply_cca_installation
+
+    if [ "$TTY_MODE" = "interactive" ] && [ -s "$PHASE_LOG_FILE" ]; then
+        whiptail --title "Phase 7 + 7b — Installations-Log" \
+                 --scrolltext \
+                 --msgbox "$(cat "$PHASE_LOG_FILE")" 30 80 || true
+    fi
+    unset PHASE_LOG_FILE
+
     finish
 
     # Marker-Datei: signalisiert "erster Run abgeschlossen" für künftige
