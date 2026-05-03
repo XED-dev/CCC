@@ -2,7 +2,7 @@
 
 > **Bash-Bootstrap und Werkzeuge für nested LXC-Stacks** auf Proxmox VE 9 mit Debian 13 / Ubuntu 24.04+.
 >
-> Status: Stufe 1 — `firstboot.sh` (Basis-Setup für frische Boxen)
+> Status: Stufe 1 — `firstboot.sh` v0.5.0 (DE/EN-TUI, idempotent, Live-validiert)
 > Lizenz: MIT
 > Distribution: <https://ccc.xed.dev>
 
@@ -27,6 +27,16 @@ apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-cer
 ```
 
 Das setzt **Zeitzone, Locales, Default-Editor und Basis-Pakete** — alles via Whiptail-TUI im Debian-Installer-Stil. Idempotent: kann beliebig oft wiederholt werden.
+
+### UX-Pattern (seit v0.5.0)
+
+- **Sechs-Phasen-State-Machine** mit `<Zurück>`-Button: Sprache → Zeitzone → Locales → Default-Locale → Pakete → Übersicht. Im ersten Dialog ist Cancel = Abort-Confirmation, sonst Cancel = zurück zur vorherigen Phase.
+- **DE/EN-Sprachwahl** als allererster Dialog. Alle weiteren Whiptail-Texte sind übersetzt; `info`/`ok`/`err`-Logs bleiben deutsch.
+- **Idempotente Pre-Selection** beim Re-Run:
+  - Locales: drei-wertige Erkennung via `/etc/locale.gen` (ACTIVE/DISABLED/ABSENT). User-Wille wird respektiert — abgewählte Locales kommen nicht als Default-ON wieder.
+  - Pakete: Marker-Datei `/var/lib/xed-ccc/firstboot.applied` trennt allerersten Run (Skript-Defaults greifen) vom Re-Run (nur dpkg-Ist-Zustand zählt).
+- **Deselect = Uninstall/Disable**: bei Pakete mit Yesno-Confirmation (Daten-Verlust-Schutz), bei Locales ohne (reversibel).
+- **Optionaler `apt dist-upgrade + autoremove + autoclean`-Schritt** am Ende, nur wenn Updates verfügbar sind. Yesno-Prompt im interaktiven Modus, ENV `DIST_UPGRADE=yes` für Auto-Run.
 
 ### Non-Interactive (CI / Auto-Provisioning)
 
