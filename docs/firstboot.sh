@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.7.2"
+VERSION="0.7.3"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -54,11 +54,16 @@ LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
 # (nur System-Ist-Zustand zählt — User-Wille respektieren).
 FIRSTBOOT_MARKER="/var/lib/xed-ccc/firstboot.applied"
 
-# ccc-Installations-Pfade (Phase 7)
+# ccc + cca CC-Suite-Installations-Pfade (Phase 7)
 CCC_INSTALL_DIR="/opt/xed-ccc"
 CCC_VENV_DIR="${CCC_INSTALL_DIR}/.venv"
 CCC_BIN_LINK="/usr/local/bin/ccc"
 CCC_REPO_URL="https://github.com/XED-dev/CCC.git"
+
+CCA_INSTALL_DIR="/opt/xed-cca"
+CCA_VENV_DIR="${CCA_INSTALL_DIR}/.venv"
+CCA_BIN_LINK="/usr/local/bin/cca"
+CCA_REPO_URL="https://github.com/XED-dev/CCA.git"
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -238,7 +243,7 @@ init_strings() {
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
             T_CCC_TITLE="XED /CCC Python Tool"
-            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CCC Python tool for role configuration:\n\n  ccc list                 # available roles\n  ccc create pmDESK        # install Gnome desktop\n  ccc create lxcHOST       # firewall + public IP\n  ...\n\nInstall Python stack + ccc tool now?\n\n(Optional — can also be done later by re-running\n this firstboot.sh.)"
+            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CC suite (Python tools) for the actual work:\n\n  ccc create pmDESK        # role composition (Gnome + xrdp + ...)\n  cca install gnome        # atomic app install\n  cca install ghost        # blog / CMS\n  cca install wordops      # LEMP stack manager\n  cca install miab         # mail-in-a-box\n\nInstall Python stack + ccc + cca tools now?\n\n(Optional — can also be done later by re-running\n this firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Done"
@@ -320,7 +325,7 @@ init_strings() {
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
             T_CCC_TITLE="XED /CCC Python-Tool"
-            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht das XED /CCC Python-Tool bereit für\nRollen-Konfiguration:\n\n  ccc list                 # verfügbare Rollen\n  ccc create pmDESK        # Gnome-Desktop installieren\n  ccc create lxcHOST       # Firewall + Public-IP\n  ...\n\nPython-Stack + ccc-Tool jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden\n via Re-Run dieses firstboot.sh.)"
+            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht die XED /CC-Suite (Python-Tools) bereit:\n\n  ccc create pmDESK        # Rollen-Komposition (Gnome + xrdp + ...)\n  cca install gnome        # atomare App-Installation\n  cca install ghost        # Blog / CMS\n  cca install wordops      # LEMP-Stack-Manager\n  cca install miab         # Mail-in-a-Box\n\nPython-Stack + ccc + cca jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden\n via Re-Run dieses firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Fertig"
@@ -883,6 +888,67 @@ EOF
     info "  /usr/local/bin/ccc list  (vollqualifiziert) oder PATH manuell ergänzen"
 }
 
+# === Phase 7b — XED /CCA App-Tool-Installation ===
+#
+# Läuft NUR wenn ccc bereits installiert ist (User hat im Phase-7-Yesno
+# „yes" gewählt). Beide Tools werden zusammen installiert oder gar nicht.
+
+apply_cca_installation() {
+    # Skip wenn ccc nicht installiert (= User hat in Phase 7 No gewählt)
+    if [ ! -L "$CCC_BIN_LINK" ] && [ ! -x "$CCC_BIN_LINK" ]; then
+        info "ccc nicht installiert — überspringe cca-Installation."
+        return 0
+    fi
+
+    info "==============================================================="
+    info "  Phase 7b: cca (App-Tool) installieren"
+    info "==============================================================="
+
+    # --- Schritt 1: Repo klonen oder Update ---
+    if [ -d "${CCA_INSTALL_DIR}/.git" ]; then
+        info "cca-Repo Update via fetch + reset --hard..."
+        git -C "$CCA_INSTALL_DIR" fetch --quiet origin main
+        git -C "$CCA_INSTALL_DIR" reset --hard --quiet origin/main
+    else
+        info "cca-Repo klonen nach ${CCA_INSTALL_DIR}..."
+        if [ -d "$CCA_INSTALL_DIR" ]; then
+            local ts
+            ts=$(date +%Y%m%d-%H%M%S)
+            mv "$CCA_INSTALL_DIR" "${CCA_INSTALL_DIR}.replaced.${ts}"
+            info "Bestehendes Verzeichnis gesichert: ${CCA_INSTALL_DIR}.replaced.${ts}"
+        fi
+        mkdir -p "$(dirname "$CCA_INSTALL_DIR")"
+        git clone --quiet --depth 1 "$CCA_REPO_URL" "$CCA_INSTALL_DIR"
+    fi
+    ok "cca-Repo bereit: commit $(git -C "$CCA_INSTALL_DIR" rev-parse --short HEAD)"
+
+    # --- Schritt 2: venv erstellen oder updaten ---
+    if [ -x "${CCA_VENV_DIR}/bin/python3" ]; then
+        info "cca-venv existiert — pip + xed-cca updaten..."
+    else
+        info "cca-venv erstellen in ${CCA_VENV_DIR}..."
+        python3 -m venv "$CCA_VENV_DIR"
+    fi
+    "${CCA_VENV_DIR}/bin/pip" install --quiet --upgrade pip </dev/null
+    "${CCA_VENV_DIR}/bin/pip" install --quiet -e "$CCA_INSTALL_DIR" </dev/null
+
+    # --- Schritt 3: Symlink ---
+    ln -sf "${CCA_VENV_DIR}/bin/cca" "$CCA_BIN_LINK"
+
+    # --- Schritt 4: Smoke-Test ---
+    if "$CCA_BIN_LINK" --version >/dev/null 2>&1; then
+        ok "cca installiert: $(${CCA_BIN_LINK} --version 2>&1 | head -1)"
+    else
+        err "cca installiert, aber 'cca --version' liefert non-zero."
+        return 1
+    fi
+
+    info "Verfügbar nach 'exit' und neu einloggen:"
+    info "  cca --help              # alle Verben"
+    info "  cca list                # verfügbare Apps"
+    info "  cca install gnome       # Beispiel: Vanilla Gnome installieren"
+}
+
 # === Phase 8 — Abschluss ===
 
 finish() {
@@ -928,6 +994,7 @@ main() {
     apply_dist_upgrade_prompt
     apply_editor
     apply_ccc_installation
+    apply_cca_installation
     finish
 
     # Marker-Datei: signalisiert "erster Run abgeschlossen" für künftige
