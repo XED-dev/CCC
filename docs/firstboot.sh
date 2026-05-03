@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.7.0"
+VERSION="0.7.1"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -780,7 +780,7 @@ apply_editor() {
 apply_ccc_installation() {
     local confirm="no"
     if [ "$TTY_MODE" = "interactive" ]; then
-        if whiptail --title "$T_CCC_TITLE" --yesno "$T_CCC_PROMPT" 18 65; then
+        if whiptail --title "$T_CCC_TITLE" --yesno "$T_CCC_PROMPT" 20 65; then
             confirm="yes"
         fi
     else
@@ -833,6 +833,20 @@ apply_ccc_installation() {
     # --- Schritt 4: Symlink ---
     ln -sf "${CCC_VENV_DIR}/bin/ccc" "$CCC_BIN_LINK"
 
+    # --- Schritt 4b: PATH-Fix ---
+    # `pct enter` startet eine Shell mit minimal-PATH (/sbin:/bin:/usr/sbin:/usr/bin)
+    # ohne /usr/local/bin → Symlink wäre nicht aufrufbar. Fix: profile.d-Snippet
+    # für Login-Shells UND /etc/environment für PAM-Sessions.
+    cat > /etc/profile.d/xed-ccc.sh <<'EOF'
+# XED-CCC: stelle sicher dass /usr/local/bin im PATH ist
+case ":$PATH:" in
+    *":/usr/local/bin:"*) ;;
+    *) export PATH="/usr/local/bin:$PATH" ;;
+esac
+EOF
+    chmod 0644 /etc/profile.d/xed-ccc.sh
+    info "PATH-Fix installiert: /etc/profile.d/xed-ccc.sh"
+
     # --- Schritt 5: Smoke-Test ---
     if "$CCC_BIN_LINK" --version >/dev/null 2>&1; then
         ok "ccc installiert: $(${CCC_BIN_LINK} --version 2>&1 | head -1)"
@@ -843,10 +857,13 @@ apply_ccc_installation() {
         return 1
     fi
 
-    info "Nächste Schritte:"
+    info "Nächste Schritte (nach 'exit' und neu einloggen für PATH-Wirksamkeit):"
     info "  ccc --help              # alle Verben"
     info "  ccc list                # verfügbare Rollen"
     info "  ccc create pmDESK       # Beispiel: Gnome-Desktop installieren"
+    info ""
+    info "Falls 'ccc' nach Re-Login nicht gefunden wird:"
+    info "  /usr/local/bin/ccc list  (vollqualifiziert) oder PATH manuell ergänzen"
 }
 
 # === Phase 8 — Abschluss ===
