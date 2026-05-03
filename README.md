@@ -2,7 +2,7 @@
 
 > **Bash-Bootstrap und Werkzeuge für nested LXC-Stacks** auf Proxmox VE 9 mit Debian 13 / Ubuntu 24.04+.
 >
-> Status: Stufe 1 — `firstboot.sh` v0.6.0 (DE/EN-TUI, idempotent) + `ccc` v0.0.1 (Python-Skelett)
+> Status: Stufe 1 — `firstboot.sh` v0.7.0 (DE/EN-TUI, idempotent, ccc-Self-Install) + `ccc` v0.0.1 (Python-Skelett)
 > Lizenz: MIT
 > Distribution: <https://ccc.xed.dev> (Bash) · <https://pypi.org/project/xed-ccc/> (Python)
 
@@ -66,7 +66,10 @@ stdin und erzwingt Non-Interactive-Mode mit ENV-Defaults.
 | 3 | Locales generieren + Default-Locale (`update-locale` → `/etc/default/locale`) |
 | 4 | Basis-Pakete installieren (`--no-install-recommends`) |
 | 5 | `EDITOR=nano` in `/etc/environment` (idempotent via grep-vor-write) |
-| 6 | Abschluss-Banner |
+| 5b | Optional: `apt dist-upgrade + autoremove + autoclean` (Yesno) |
+| 6 | Editor-Eintrag |
+| **7** | **XED /CCC Python-Tool installieren** (Yesno) — apt python3-Stack + git clone + venv + symlink |
+| 8 | Abschluss-Banner + Marker-Datei |
 
 **Bewusst nicht enthalten:** Bridge-/iptables-/nested-LXC-Setup. Das kommt
 mit `lxc-host-setup.sh` (Skript 2/3, geplant) als separates Skript für
@@ -82,15 +85,27 @@ Pendant zu `pct` aus Proxmox, aber innerhalb der LXC-Box laufend.
 ### Installation (zwei Wege)
 
 ```bash
-# Variante A — curl-Bash (analog firstboot.sh, ohne PyPI-Account):
-bash <(curl -s https://ccc.xed.dev/install-ccc.sh)
+# Variante A — automatisch via firstboot.sh Phase 7 (empfohlen für frische Boxen):
+#   firstboot.sh fragt nach ccc-Installation, klont Repo nach /opt/xed-ccc/,
+#   baut venv und symlinkt /usr/local/bin/ccc in einem Schritt.
 
-# Variante B — PyPI (für SysOps die Python kennen):
-pip install xed-ccc       # System-Python (mit pep668-bypass) ODER:
+# Variante B — PyPI (für SysOps die Python kennen, bestehende Boxen):
 pipx install xed-ccc      # isolierte Tool-Installation (empfohlen)
+pip install xed-ccc       # System-Python (mit pep668-bypass)
 ```
 
-`firstboot.sh` v0.6.0 ruft Variante A in Phase 7 automatisch nach Yesno-Bestätigung.
+**Updates** (nach Erst-Installation):
+
+```bash
+# Variante A — firstboot.sh Re-Run (Phase 7 macht fetch+reset im /opt/xed-ccc/):
+bash <(curl -s https://ccc.xed.dev/firstboot.sh)
+
+# Variante B — pipx-Pfad:
+pipx upgrade xed-ccc
+
+# Geplant — Self-Update als Python-Verb:
+ccc update
+```
 
 ### Verben (analog `pct`)
 

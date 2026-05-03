@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -53,6 +53,12 @@ LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
 # Trennt allerersten-Run-Verhalten (Skript-Defaults greifen) von Re-Run
 # (nur System-Ist-Zustand zählt — User-Wille respektieren).
 FIRSTBOOT_MARKER="/var/lib/xed-ccc/firstboot.applied"
+
+# ccc-Installations-Pfade (Phase 7)
+CCC_INSTALL_DIR="/opt/xed-ccc"
+CCC_VENV_DIR="${CCC_INSTALL_DIR}/.venv"
+CCC_BIN_LINK="/usr/local/bin/ccc"
+CCC_REPO_URL="https://github.com/XED-dev/CCC.git"
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -232,7 +238,7 @@ init_strings() {
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
             T_CCC_TITLE="XED /CCC Python Tool"
-            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CCC Python tool for role configuration:\n\n  ccc list                 # available roles\n  ccc create pmDESK        # install Gnome desktop\n  ccc create lxcHOST       # firewall + public IP\n  ...\n\nInstall Python stack + ccc tool now?\n\n(Optional — can also be done later via:\n bash <(curl -s https://ccc.xed.dev/install-ccc.sh))"
+            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CCC Python tool for role configuration:\n\n  ccc list                 # available roles\n  ccc create pmDESK        # install Gnome desktop\n  ccc create lxcHOST       # firewall + public IP\n  ...\n\nInstall Python stack + ccc tool now?\n\n(Optional — can also be done later by re-running\n this firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Done"
@@ -314,7 +320,7 @@ init_strings() {
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
             T_CCC_TITLE="XED /CCC Python-Tool"
-            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht das XED /CCC Python-Tool bereit für\nRollen-Konfiguration:\n\n  ccc list                 # verfügbare Rollen\n  ccc create pmDESK        # Gnome-Desktop installieren\n  ccc create lxcHOST       # Firewall + Public-IP\n  ...\n\nPython-Stack + ccc-Tool jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden via:\n bash <(curl -s https://ccc.xed.dev/install-ccc.sh))"
+            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht das XED /CCC Python-Tool bereit für\nRollen-Konfiguration:\n\n  ccc list                 # verfügbare Rollen\n  ccc create pmDESK        # Gnome-Desktop installieren\n  ccc create lxcHOST       # Firewall + Public-IP\n  ...\n\nPython-Stack + ccc-Tool jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden\n via Re-Run dieses firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Fertig"
@@ -760,9 +766,18 @@ apply_editor() {
 
 # === Phase 6 — Abschluss ===
 
-# === Phase 7 — XED /CCC Python-Tool-Bridge ===
+# === Phase 7 — XED /CCC Python-Tool-Installation (self-contained) ===
+#
+# Direkt-Integration der ccc-Installation in firstboot.sh — kein Sub-Aufruf
+# von install-ccc.sh mehr. Eine Bash-Datei für die ganze Box-Basis,
+# danach ist alles Python.
+#
+# Updates des Python-Tools: nicht via Bash, sondern via:
+#   pipx upgrade xed-ccc                   (PyPI-Pfad, falls so installiert)
+#   ccc update                             (geplant, Python-Self-Update-Verb)
+#   cd /opt/xed-ccc && git fetch + reset   (manuell, Power-User)
 
-apply_ccc_bootstrap_prompt() {
+apply_ccc_installation() {
     local confirm="no"
     if [ "$TTY_MODE" = "interactive" ]; then
         if whiptail --title "$T_CCC_TITLE" --yesno "$T_CCC_PROMPT" 18 65; then
@@ -775,25 +790,63 @@ apply_ccc_bootstrap_prompt() {
         fi
     fi
 
-    if [ "$confirm" = "yes" ]; then
-        info "Python-Stack installieren (python3, python3-venv, git)..."
-        apt-get install -y -qq --no-install-recommends \
-            python3 python3-venv git </dev/null
-        ok "Python-Stack bereit: $(python3 --version 2>&1)"
-
-        info "install-ccc.sh aufrufen (Bash-Bootstrap des Python-Tools)..."
-        if command -v curl >/dev/null 2>&1; then
-            # Process Substitution: TTY bleibt erhalten für ggf. weitere Prompts
-            bash <(curl -s https://ccc.xed.dev/install-ccc.sh)
-        else
-            err "curl nicht verfügbar — install-ccc.sh kann nicht geladen werden."
-            err "  Bitte manuell: apt install -y curl && bash <(curl -s https://ccc.xed.dev/install-ccc.sh)"
-            return 1
-        fi
-    else
-        info "XED /CCC Python-Tool übersprungen — Aufruf später möglich:"
-        info "  bash <(curl -s https://ccc.xed.dev/install-ccc.sh)"
+    if [ "$confirm" != "yes" ]; then
+        info "XED /CCC Python-Tool übersprungen — späterer Re-Run von firstboot.sh möglich."
+        return 0
     fi
+
+    # --- Schritt 1: Python-Stack + git ---
+    info "Python-Stack installieren (python3, python3-venv, git)..."
+    apt-get install -y -qq --no-install-recommends \
+        python3 python3-venv git </dev/null
+    ok "Python-Stack bereit: $(python3 --version 2>&1)"
+
+    # --- Schritt 2: Repo klonen oder Update ---
+    if [ -d "${CCC_INSTALL_DIR}/.git" ]; then
+        info "ccc-Repo Update via fetch + reset --hard..."
+        git -C "$CCC_INSTALL_DIR" fetch --quiet origin main
+        git -C "$CCC_INSTALL_DIR" reset --hard --quiet origin/main
+    else
+        info "ccc-Repo klonen nach ${CCC_INSTALL_DIR}..."
+        # no-rm-Disziplin: bestehendes Verzeichnis (ohne .git) sichern via mv
+        if [ -d "$CCC_INSTALL_DIR" ]; then
+            local ts
+            ts=$(date +%Y%m%d-%H%M%S)
+            mv "$CCC_INSTALL_DIR" "${CCC_INSTALL_DIR}.replaced.${ts}"
+            info "Bestehendes Verzeichnis gesichert: ${CCC_INSTALL_DIR}.replaced.${ts}"
+        fi
+        mkdir -p "$(dirname "$CCC_INSTALL_DIR")"
+        git clone --quiet --depth 1 "$CCC_REPO_URL" "$CCC_INSTALL_DIR"
+    fi
+    ok "Repo bereit: commit $(git -C "$CCC_INSTALL_DIR" rev-parse --short HEAD)"
+
+    # --- Schritt 3: venv erstellen oder updaten ---
+    if [ -x "${CCC_VENV_DIR}/bin/python3" ]; then
+        info "venv existiert — pip + xed-ccc updaten..."
+    else
+        info "venv erstellen in ${CCC_VENV_DIR}..."
+        python3 -m venv "$CCC_VENV_DIR"
+    fi
+    "${CCC_VENV_DIR}/bin/pip" install --quiet --upgrade pip </dev/null
+    "${CCC_VENV_DIR}/bin/pip" install --quiet -e "$CCC_INSTALL_DIR" </dev/null
+
+    # --- Schritt 4: Symlink ---
+    ln -sf "${CCC_VENV_DIR}/bin/ccc" "$CCC_BIN_LINK"
+
+    # --- Schritt 5: Smoke-Test ---
+    if "$CCC_BIN_LINK" --version >/dev/null 2>&1; then
+        ok "ccc installiert: $(${CCC_BIN_LINK} --version 2>&1 | head -1)"
+    else
+        err "ccc installiert, aber 'ccc --version' liefert non-zero. Diagnose:"
+        err "  ls -la $CCC_BIN_LINK"
+        err "  $CCC_BIN_LINK --version"
+        return 1
+    fi
+
+    info "Nächste Schritte:"
+    info "  ccc --help              # alle Verben"
+    info "  ccc list                # verfügbare Rollen"
+    info "  ccc create pmDESK       # Beispiel: Gnome-Desktop installieren"
 }
 
 # === Phase 8 — Abschluss ===
@@ -840,7 +893,7 @@ main() {
     apply_packages
     apply_dist_upgrade_prompt
     apply_editor
-    apply_ccc_bootstrap_prompt
+    apply_ccc_installation
     finish
 
     # Marker-Datei: signalisiert "erster Run abgeschlossen" für künftige

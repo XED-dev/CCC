@@ -17,10 +17,12 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Rollen-Registry** in `src/ccc/roles/`:
   - `pmDESK` (Debian/Ubuntu Gnome-Desktop) — Stub mit Plan-Output
   - Geplant: `lxcHOST`, `osNGINX`, `commBOX`
-- **firstboot.sh-Bridge**: Phase 7 in `firstboot.sh` v0.6.0 ruft optional
-  `bash <(curl -s https://ccc.xed.dev/install-ccc.sh)` für Python-Tool-Install
-- **Distribution doppelt**: PyPI (`pip install xed-ccc`) + curl-Bash
-  (`bash <(curl -s https://ccc.xed.dev/install-ccc.sh)`)
+- **firstboot.sh-Integration**: Phase 7 in `firstboot.sh` v0.7.0 installiert
+  ccc direkt (apt python3-Stack + git clone /opt/xed-ccc/ + venv + symlink
+  `/usr/local/bin/ccc`). Self-contained, kein Sub-Aufruf eines weiteren
+  Bash-Skripts mehr.
+- **Distribution doppelt**: PyPI (`pipx install xed-ccc`) + automatisch
+  via `firstboot.sh` Phase 7 (für frische LXC-Boxen)
 
 ### Architektur-Hinweise
 
