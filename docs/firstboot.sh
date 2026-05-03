@@ -44,10 +44,15 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.4.1"
+VERSION="0.5.0"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
+
+# Marker-Datei: existiert nach erstem erfolgreichen Run.
+# Trennt allerersten-Run-Verhalten (Skript-Defaults greifen) von Re-Run
+# (nur System-Ist-Zustand zählt — User-Wille respektieren).
+FIRSTBOOT_MARKER="/var/lib/xed-ccc/firstboot.applied"
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -83,6 +88,11 @@ warn() { echo "⚠ $*" >&2; }
 
 # === Idempotenz-Helper ===
 
+# Existiert Marker-Datei? (= bereits ein erfolgreicher Run gelaufen)
+is_first_run() {
+    [ ! -f "$FIRSTBOOT_MARKER" ]
+}
+
 # Ist Locale (z.B. "de_AT.UTF-8") in /etc/locale.gen UNcommented?
 locale_is_active() {
     local loc="$1"
@@ -90,17 +100,51 @@ locale_is_active() {
     grep -qE "^[[:space:]]*${pattern}[[:space:]]+UTF-8" /etc/locale.gen 2>/dev/null
 }
 
+# Drei-wertiger Locale-Status:
+#   ACTIVE   — uncommented in /etc/locale.gen (= aktiv)
+#   DISABLED — commented in /etc/locale.gen (= User hat abgewählt)
+#   ABSENT   — gar nicht in /etc/locale.gen (= unbekannt)
+locale_status() {
+    local loc="$1"
+    local pattern="${loc//./\\.}"
+    if grep -qE "^[[:space:]]*${pattern}[[:space:]]+UTF-8" /etc/locale.gen 2>/dev/null; then
+        echo "ACTIVE"
+    elif grep -qE "^#[[:space:]]*${pattern}[[:space:]]+UTF-8" /etc/locale.gen 2>/dev/null; then
+        echo "DISABLED"
+    else
+        echo "ABSENT"
+    fi
+}
+
 # Ist Paket installiert? (dpkg-query)
 pkg_is_installed() {
     dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
-# Liefert "ON" wenn Item bereits aktiv (idempotent), sonst $default ("ON"/"OFF")
+# Pre-Select-Helper für Whiptail-Checklists.
+#
+# Locale: drei-wertig. ACTIVE/DISABLED sind explizite User-States, ABSENT
+# fällt auf $default zurück (Skript-Default greift).
+#
+# Pakete: zwei-wertig. INSTALLED → ON. Bei UNINSTALLED entscheidet
+# is_first_run: erster Run → Skript-Default, Re-Run → OFF (User-Wille).
 locale_state() {
-    if locale_is_active "$1"; then echo "ON"; else echo "$2"; fi
+    case "$(locale_status "$1")" in
+        ACTIVE)   echo "ON" ;;
+        DISABLED) echo "OFF" ;;
+        *)        # ABSENT
+            if is_first_run; then echo "$2"; else echo "OFF"; fi
+            ;;
+    esac
 }
 pkg_state() {
-    if pkg_is_installed "$1"; then echo "ON"; else echo "$2"; fi
+    if pkg_is_installed "$1"; then
+        echo "ON"
+    elif is_first_run; then
+        echo "$2"
+    else
+        echo "OFF"
+    fi
 }
 
 # Aktueller System-Default-Locale (für `whiptail --default-item`)
@@ -184,7 +228,7 @@ init_strings() {
             # --- Dist-Upgrade-Prompt ---
             T_UPGRADE_TITLE="System Updates"
             T_UPGRADE_PROMPT_PRE="package updates available."
-            T_UPGRADE_PROMPT_POST="Run 'apt dist-upgrade' now?\n\n(Recommended for an up-to-date box. May take\nsome minutes depending on update size.)"
+            T_UPGRADE_PROMPT_POST="Run 'apt dist-upgrade + autoremove + autoclean' now?\n\n(Recommended for an up-to-date box. May take some\nminutes depending on update size.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Done"
@@ -262,7 +306,7 @@ init_strings() {
             # --- Dist-Upgrade-Prompt ---
             T_UPGRADE_TITLE="System-Updates"
             T_UPGRADE_PROMPT_PRE="Pakete-Updates verfügbar."
-            T_UPGRADE_PROMPT_POST="Jetzt 'apt dist-upgrade' durchführen?\n\n(Empfohlen für aktuelle Box. Kann je nach Update-Umfang\neinige Minuten dauern.)"
+            T_UPGRADE_PROMPT_POST="Jetzt 'apt dist-upgrade + autoremove + autoclean' durchführen?\n\n(Empfohlen für aktuelle Box. Kann je nach Update-Umfang\neinige Minuten dauern.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Fertig"
@@ -304,7 +348,17 @@ require_supported_distro() {
 }
 
 bootstrap_apt() {
-    info "apt-Cache aktualisieren..."
+    # Skip-Logik: wenn alle Pre-Pakete schon da, kein apt-update + install
+    # (spart bei Re-Run typisch 5-15 Sekunden)
+    if pkg_is_installed whiptail \
+        && pkg_is_installed locales \
+        && pkg_is_installed tzdata \
+        && pkg_is_installed ca-certificates; then
+        ok "Bootstrap-Pakete bereits vorhanden — apt-update übersprungen."
+        return 0
+    fi
+
+    info "apt-Cache aktualisieren (kann ein paar Sekunden dauern)..."
     apt-get update -qq </dev/null
 
     info "Bootstrap-Pakete (whiptail, locales, tzdata, ca-certificates) sicherstellen..."
@@ -672,6 +726,11 @@ $T_UPGRADE_PROMPT_POST" \
         info "apt dist-upgrade ausführen..."
         apt-get dist-upgrade -y -qq </dev/null
         ok "Updates installiert."
+        info "apt autoremove (verwaiste Dependencies entfernen)..."
+        apt-get autoremove -y -qq </dev/null
+        info "apt autoclean (alten Paket-Cache löschen)..."
+        apt-get autoclean -qq </dev/null
+        ok "System aufgeräumt."
     else
         info "Updates übersprungen — System bleibt auf aktuellem Stand."
     fi
@@ -736,6 +795,12 @@ main() {
     apply_dist_upgrade_prompt
     apply_editor
     finish
+
+    # Marker-Datei: signalisiert "erster Run abgeschlossen" für künftige
+    # Re-Runs (is_first_run() == false → User-Wille respektieren statt
+    # Skript-Defaults bei pre-Select).
+    mkdir -p "$(dirname "$FIRSTBOOT_MARKER")"
+    touch "$FIRSTBOOT_MARKER"
 
     ok "${SCRIPT_NAME} durchgelaufen — Box bereit."
 }
