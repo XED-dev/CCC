@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.5.0"
+VERSION="0.6.0"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -230,6 +230,10 @@ init_strings() {
             T_UPGRADE_PROMPT_PRE="package updates available."
             T_UPGRADE_PROMPT_POST="Run 'apt dist-upgrade + autoremove + autoclean' now?\n\n(Recommended for an up-to-date box. May take some\nminutes depending on update size.)"
 
+            # --- Phase 7: ccc-Python-Tool-Bridge ---
+            T_CCC_TITLE="XED /CCC Python Tool"
+            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CCC Python tool for role configuration:\n\n  ccc list                 # available roles\n  ccc create pmDESK        # install Gnome desktop\n  ccc create lxcHOST       # firewall + public IP\n  ...\n\nInstall Python stack + ccc tool now?\n\n(Optional — can also be done later via:\n bash <(curl -s https://ccc.xed.dev/install-ccc.sh))"
+
             # --- Finish ---
             T_FINISH_TITLE="Done"
             T_FINISH_HEADER="Setup complete."
@@ -307,6 +311,10 @@ init_strings() {
             T_UPGRADE_TITLE="System-Updates"
             T_UPGRADE_PROMPT_PRE="Pakete-Updates verfügbar."
             T_UPGRADE_PROMPT_POST="Jetzt 'apt dist-upgrade + autoremove + autoclean' durchführen?\n\n(Empfohlen für aktuelle Box. Kann je nach Update-Umfang\neinige Minuten dauern.)"
+
+            # --- Phase 7: ccc-Python-Tool-Bridge ---
+            T_CCC_TITLE="XED /CCC Python-Tool"
+            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht das XED /CCC Python-Tool bereit für\nRollen-Konfiguration:\n\n  ccc list                 # verfügbare Rollen\n  ccc create pmDESK        # Gnome-Desktop installieren\n  ccc create lxcHOST       # Firewall + Public-IP\n  ...\n\nPython-Stack + ccc-Tool jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden via:\n bash <(curl -s https://ccc.xed.dev/install-ccc.sh))"
 
             # --- Finish ---
             T_FINISH_TITLE="Fertig"
@@ -752,6 +760,44 @@ apply_editor() {
 
 # === Phase 6 — Abschluss ===
 
+# === Phase 7 — XED /CCC Python-Tool-Bridge ===
+
+apply_ccc_bootstrap_prompt() {
+    local confirm="no"
+    if [ "$TTY_MODE" = "interactive" ]; then
+        if whiptail --title "$T_CCC_TITLE" --yesno "$T_CCC_PROMPT" 18 65; then
+            confirm="yes"
+        fi
+    else
+        # Non-interactive: opt-in via ENV LAUNCH_CCC=yes
+        if [ "${LAUNCH_CCC:-no}" = "yes" ]; then
+            confirm="yes"
+        fi
+    fi
+
+    if [ "$confirm" = "yes" ]; then
+        info "Python-Stack installieren (python3, python3-venv, git)..."
+        apt-get install -y -qq --no-install-recommends \
+            python3 python3-venv git </dev/null
+        ok "Python-Stack bereit: $(python3 --version 2>&1)"
+
+        info "install-ccc.sh aufrufen (Bash-Bootstrap des Python-Tools)..."
+        if command -v curl >/dev/null 2>&1; then
+            # Process Substitution: TTY bleibt erhalten für ggf. weitere Prompts
+            bash <(curl -s https://ccc.xed.dev/install-ccc.sh)
+        else
+            err "curl nicht verfügbar — install-ccc.sh kann nicht geladen werden."
+            err "  Bitte manuell: apt install -y curl && bash <(curl -s https://ccc.xed.dev/install-ccc.sh)"
+            return 1
+        fi
+    else
+        info "XED /CCC Python-Tool übersprungen — Aufruf später möglich:"
+        info "  bash <(curl -s https://ccc.xed.dev/install-ccc.sh)"
+    fi
+}
+
+# === Phase 8 — Abschluss ===
+
 finish() {
     local lang_line
     lang_line=$(grep '^LANG=' /etc/default/locale 2>/dev/null | cut -d= -f2 || echo "?")
@@ -794,6 +840,7 @@ main() {
     apply_packages
     apply_dist_upgrade_prompt
     apply_editor
+    apply_ccc_bootstrap_prompt
     finish
 
     # Marker-Datei: signalisiert "erster Run abgeschlossen" für künftige

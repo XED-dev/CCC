@@ -2,9 +2,9 @@
 
 > **Bash-Bootstrap und Werkzeuge für nested LXC-Stacks** auf Proxmox VE 9 mit Debian 13 / Ubuntu 24.04+.
 >
-> Status: Stufe 1 — `firstboot.sh` v0.5.0 (DE/EN-TUI, idempotent, Live-validiert)
+> Status: Stufe 1 — `firstboot.sh` v0.6.0 (DE/EN-TUI, idempotent) + `ccc` v0.0.1 (Python-Skelett)
 > Lizenz: MIT
-> Distribution: <https://ccc.xed.dev>
+> Distribution: <https://ccc.xed.dev> (Bash) · <https://pypi.org/project/xed-ccc/> (Python)
 
 ---
 
@@ -71,6 +71,46 @@ stdin und erzwingt Non-Interactive-Mode mit ENV-Defaults.
 **Bewusst nicht enthalten:** Bridge-/iptables-/nested-LXC-Setup. Das kommt
 mit `lxc-host-setup.sh` (Skript 2/3, geplant) als separates Skript für
 cBUZZ-Outer-Container.
+
+---
+
+## Phase 2 — `ccc` (Python-Tool, ab v0.0.1)
+
+Nach `firstboot.sh` kommt das Python-Tool für **Rollen-Konfiguration** —
+Pendant zu `pct` aus Proxmox, aber innerhalb der LXC-Box laufend.
+
+### Installation (zwei Wege)
+
+```bash
+# Variante A — curl-Bash (analog firstboot.sh, ohne PyPI-Account):
+bash <(curl -s https://ccc.xed.dev/install-ccc.sh)
+
+# Variante B — PyPI (für SysOps die Python kennen):
+pip install xed-ccc       # System-Python (mit pep668-bypass) ODER:
+pipx install xed-ccc      # isolierte Tool-Installation (empfohlen)
+```
+
+`firstboot.sh` v0.6.0 ruft Variante A in Phase 7 automatisch nach Yesno-Bestätigung.
+
+### Verben (analog `pct`)
+
+```bash
+ccc list                  # verfügbare Rollen mit Status
+ccc create pmDESK         # Rolle in aktueller Box installieren
+ccc create pmDESK --dry-run  # nur Plan zeigen
+ccc menu                  # interaktive TUI (Stub, Textual kommt später)
+ccc --version
+ccc --help
+```
+
+### Rollen-Roadmap
+
+| Rolle | Beschreibung | Status |
+|---|---|---|
+| `pmDESK` | Debian/Ubuntu Gnome-Desktop (xrdp + Gnome-Stack) | Stub (Plan) |
+| `lxcHOST` | Firewall + Public-IP + Outer-Container für nested LXC | geplant |
+| `osNGINX` | Reverse-Proxy + WordOps | geplant |
+| `commBOX` | Communication-Stack (Mail, DNS, Webmail) | geplant |
 
 ---
 
