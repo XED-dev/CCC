@@ -44,9 +44,15 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.2.0"
+VERSION="0.4.0"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
+LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
+
+# Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
+# Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
+# gegen versehentliche Deinstallation von System-Paketen.
+PKG_MENU_LIST="htop curl wget sudo psmisc net-tools iproute2 iputils-ping gnupg nano pwgen socat"
 
 # Konfigurations-Variablen, gefüllt durch Phase 1
 TZ_VALUE=""
@@ -97,6 +103,170 @@ current_default_locale() {
     if [ -r /etc/default/locale ]; then
         grep '^LANG=' /etc/default/locale 2>/dev/null | cut -d= -f2 | tr -d '"'
     fi
+}
+
+# === I18n — DE/EN-Strings ===
+# Aufgerufen NACH Sprachwahl-Phase (oder mit Default DE wenn non-interactive).
+# Alle user-facing Whiptail-Texte werden hier gesetzt; info/ok/err-Logs bleiben DE.
+
+init_strings() {
+    case "${LANG_CHOICE:-DE}" in
+        EN)
+            # --- Buttons ---
+            T_BACK="Back"
+            T_APPLY="Apply"
+
+            # --- Phase 1: Sprache (für Abort-Dialog) ---
+            T_ABORT_TITLE="Abort?"
+            T_ABORT_PROMPT="Really abort the script?"
+
+            # --- Phase 2: Zeitzone ---
+            T_TZ_TITLE="Server Timezone"
+            T_TZ_PROMPT="Recommendation: UTC for servers. Set local time per user shell."
+            T_TZ_UTC="Recommended — no DST jumps, clean logs"
+            T_TZ_VIENNA="DACH standard (CET/CEST)"
+            T_TZ_NICOSIA="Cyprus / EET (DevOps location)"
+            T_TZ_BERLIN="Generic DACH"
+            T_TZ_LONDON="UK / GMT"
+
+            # --- Phase 3: Locales ---
+            T_LOC_TITLE="Generate Locales"
+            T_LOC_PROMPT="Which locales should be available? (Space = toggle)"
+            T_LOC_AT="Austria"
+            T_LOC_DE="Germany"
+            T_LOC_CH="Switzerland"
+            T_LOC_US="US English"
+            T_LOC_GB="UK English"
+            T_LOC_FR="France"
+            T_LOC_IT="Italy"
+            T_LOC_ES="Spain"
+            T_LOC_NONE_TITLE="No locales"
+            T_LOC_NONE="No locales selected. Please select at least one."
+
+            # --- Phase 4: Default-Locale ---
+            T_DEFLOC_TITLE="Default Locale"
+            T_DEFLOC_PROMPT="Which of these locales as system default (LANG)?"
+
+            # --- Phase 5: Pakete ---
+            T_PKGS_TITLE="Base Packages"
+            T_PKGS_PROMPT="Which tools to install? (Space = toggle, deselect = remove with confirmation)"
+            T_PKG_HTOP="Process monitor"
+            T_PKG_CURL="HTTP client"
+            T_PKG_WGET="HTTP downloader"
+            T_PKG_SUDO="Privilege switch"
+            T_PKG_PSMISC="killall, fuser, pstree"
+            T_PKG_NETTOOLS="ifconfig, route, netstat"
+            T_PKG_IPROUTE2="ip a, ip r, ss"
+            T_PKG_IPING="ping"
+            T_PKG_GNUPG="GPG for repos"
+            T_PKG_NANO="Editor"
+            T_PKG_PWGEN="Password generator"
+            T_PKG_SOCAT="Universal socket tool"
+
+            # --- Phase 6: Confirm ---
+            T_CONFIRM_TITLE="Summary — please review"
+            T_CONFIRM_TZ="Timezone:       "
+            T_CONFIRM_LOCALES="Locales:        "
+            T_CONFIRM_DEFLOC="Default-Locale: "
+            T_CONFIRM_PKGS="Packages:       "
+            T_CONFIRM_PROMPT="Apply?"
+
+            # --- Remove-Confirmation (apply_packages) ---
+            T_REMOVE_TITLE="Remove packages?"
+            T_REMOVE_PROMPT_PRE="The following packages are installed but deselected in the menu:"
+            T_REMOVE_PROMPT_POST="Remove with 'apt remove'?\n\n(Configuration files are kept — no 'purge'.)"
+
+            # --- Dist-Upgrade-Prompt ---
+            T_UPGRADE_TITLE="System Updates"
+            T_UPGRADE_PROMPT_PRE="package updates available."
+            T_UPGRADE_PROMPT_POST="Run 'apt dist-upgrade' now?\n\n(Recommended for an up-to-date box. May take\nsome minutes depending on update size.)"
+
+            # --- Finish ---
+            T_FINISH_TITLE="Done"
+            T_FINISH_HEADER="Setup complete."
+            T_FINISH_TZ="Timezone:       "
+            T_FINISH_DEFLOC="Default-Locale: "
+            T_FINISH_HINT="Please 'exit' and re-login\\nso the locale takes effect in the shell session."
+            ;;
+        *)
+            # DE default (Fallback wenn LANG_CHOICE leer)
+            # --- Buttons ---
+            T_BACK="Zurück"
+            T_APPLY="Anwenden"
+
+            # --- Phase 1 ---
+            T_ABORT_TITLE="Abbrechen?"
+            T_ABORT_PROMPT="Skript wirklich abbrechen?"
+
+            # --- Phase 2: Zeitzone ---
+            T_TZ_TITLE="Server-Zeitzone"
+            T_TZ_PROMPT="Empfehlung: UTC für Server. Lokale Zeit besser pro User-Shell setzen."
+            T_TZ_UTC="Empfohlen — keine DST-Sprünge, saubere Logs"
+            T_TZ_VIENNA="DACH-Standard (CET/CEST)"
+            T_TZ_NICOSIA="Cyprus / EET (DevOps-Standort)"
+            T_TZ_BERLIN="Generisch DACH"
+            T_TZ_LONDON="UK / GMT"
+
+            # --- Phase 3: Locales ---
+            T_LOC_TITLE="Locales generieren"
+            T_LOC_PROMPT="Welche Locales sollen verfügbar sein? (Leertaste = toggle)"
+            T_LOC_AT="Österreich"
+            T_LOC_DE="Deutschland"
+            T_LOC_CH="Schweiz"
+            T_LOC_US="US-Englisch"
+            T_LOC_GB="UK-Englisch"
+            T_LOC_FR="Frankreich"
+            T_LOC_IT="Italien"
+            T_LOC_ES="Spanien"
+            T_LOC_NONE_TITLE="Keine Locales"
+            T_LOC_NONE="Keine Locales ausgewählt. Bitte mindestens eine wählen."
+
+            # --- Phase 4: Default-Locale ---
+            T_DEFLOC_TITLE="Default-Locale"
+            T_DEFLOC_PROMPT="Welche dieser Locales als System-Default (LANG)?"
+
+            # --- Phase 5: Pakete ---
+            T_PKGS_TITLE="Basis-Pakete"
+            T_PKGS_PROMPT="Welche Tools installieren? (Leertaste = toggle, abwählen = deinstallieren mit Rückfrage)"
+            T_PKG_HTOP="Prozess-Monitor"
+            T_PKG_CURL="HTTP-Client"
+            T_PKG_WGET="HTTP-Downloader"
+            T_PKG_SUDO="Privilege-Wechsel"
+            T_PKG_PSMISC="killall, fuser, pstree"
+            T_PKG_NETTOOLS="ifconfig, route, netstat"
+            T_PKG_IPROUTE2="ip a, ip r, ss"
+            T_PKG_IPING="ping"
+            T_PKG_GNUPG="GPG für Repos"
+            T_PKG_NANO="Editor"
+            T_PKG_PWGEN="Passwort-Generator"
+            T_PKG_SOCAT="Universal-Socket-Tool"
+
+            # --- Phase 6: Confirm ---
+            T_CONFIRM_TITLE="Übersicht — bitte prüfen"
+            T_CONFIRM_TZ="Zeitzone:       "
+            T_CONFIRM_LOCALES="Locales:        "
+            T_CONFIRM_DEFLOC="Default-Locale: "
+            T_CONFIRM_PKGS="Pakete:         "
+            T_CONFIRM_PROMPT="Anwenden?"
+
+            # --- Remove-Confirmation ---
+            T_REMOVE_TITLE="Pakete deinstallieren?"
+            T_REMOVE_PROMPT_PRE="Folgende Pakete sind installiert, aber im Menü abgewählt:"
+            T_REMOVE_PROMPT_POST="Mit 'apt remove' deinstallieren?\n\n(Konfigurations-Dateien bleiben erhalten — kein 'purge'.)"
+
+            # --- Dist-Upgrade-Prompt ---
+            T_UPGRADE_TITLE="System-Updates"
+            T_UPGRADE_PROMPT_PRE="Pakete-Updates verfügbar."
+            T_UPGRADE_PROMPT_POST="Jetzt 'apt dist-upgrade' durchführen?\n\n(Empfohlen für aktuelle Box. Kann je nach Update-Umfang\neinige Minuten dauern.)"
+
+            # --- Finish ---
+            T_FINISH_TITLE="Fertig"
+            T_FINISH_HEADER="Setup abgeschlossen."
+            T_FINISH_TZ="Zeitzone:       "
+            T_FINISH_DEFLOC="Default-Locale: "
+            T_FINISH_HINT="Bitte einmal 'exit' und neu einloggen,\\ndamit die Locale in der Shell-Session greift."
+            ;;
+    esac
 }
 
 # === Phase 0 — Pre-Flight ===
@@ -158,97 +328,160 @@ detect_tty() {
 # === Phase 1 — Eingaben sammeln ===
 
 collect_inputs_interactive() {
-    # --- Zeitzone ---
-    TZ_VALUE=$(whiptail --title "Server-Zeitzone" \
-        --menu "Empfehlung: UTC für Server. Lokale Zeit besser pro User-Shell setzen." \
-        16 70 5 \
-        "UTC"            "Empfohlen — keine DST-Sprünge, saubere Logs" \
-        "Europe/Vienna"  "DACH-Standard (CET/CEST)" \
-        "Asia/Nicosia"   "Cyprus / EET (DevOps-Standort)" \
-        "Europe/Berlin"  "Generisch DACH" \
-        "Europe/London"  "UK / GMT" \
-        3>&1 1>&2 2>&3) || { info "Abgebrochen."; exit 1; }
+    # State-Machine mit <Zurück>-Support: Cancel-Button = "Zurück" (außer Phase 1).
+    # Sechs Phasen: 1=Sprache, 2=TZ, 3=Locales, 4=Default-Locale, 5=Pakete, 6=Confirm.
+    # Bei Cancel/Esc → Phase decrement; in Phase 1 → Abort-Confirmation.
 
-    # --- Locales (Multi-Select, mit Idempotenz-Erkennung) ---
-    # Pre-selected: aktuell aktive Locales aus /etc/locale.gen + Skript-Defaults
-    # Default-ON jetzt: AT, DE, CH, US, GB (DevOps-Wunsch)
-    LOCALES_VALUE=$(whiptail --title "Locales generieren" \
-        --checklist "Welche Locales sollen verfügbar sein? (Leertaste = toggle)" \
-        18 65 8 \
-        "de_AT.UTF-8" "Österreich"   "$(locale_state de_AT.UTF-8 ON)"  \
-        "de_DE.UTF-8" "Deutschland"  "$(locale_state de_DE.UTF-8 ON)"  \
-        "de_CH.UTF-8" "Schweiz"      "$(locale_state de_CH.UTF-8 ON)"  \
-        "en_US.UTF-8" "US-Englisch"  "$(locale_state en_US.UTF-8 ON)"  \
-        "en_GB.UTF-8" "UK-Englisch"  "$(locale_state en_GB.UTF-8 ON)"  \
-        "fr_FR.UTF-8" "Frankreich"   "$(locale_state fr_FR.UTF-8 OFF)" \
-        "it_IT.UTF-8" "Italien"      "$(locale_state it_IT.UTF-8 OFF)" \
-        "es_ES.UTF-8" "Spanien"      "$(locale_state es_ES.UTF-8 OFF)" \
-        3>&1 1>&2 2>&3) || { info "Abgebrochen."; exit 1; }
-    # Whiptail liefert "de_AT.UTF-8" "en_US.UTF-8" mit Quotes — entfernen
-    LOCALES_VALUE=$(echo "$LOCALES_VALUE" | tr -d '"')
+    init_strings   # vorab DE als Fallback laden (Phase-1-Abort-Dialog)
 
-    if [ -z "$LOCALES_VALUE" ]; then
-        err "Keine Locales ausgewählt — Abbruch."
-        exit 1
-    fi
+    local PHASE=1
+    local MAX_PHASE=6
+    local rc
 
-    # --- Default-Locale (dynamisch aus Auswahl, Layout-Fix) ---
-    local default_args=()
-    local locale_count=0
-    for loc in $LOCALES_VALUE; do
-        default_args+=("$loc" "")
-        locale_count=$((locale_count + 1))
+    while [ "$PHASE" -le "$MAX_PHASE" ]; do
+        rc=0
+        case $PHASE in
+            1)
+                # --- Phase 1: Sprache ---
+                # Kein --cancel-button "Zurück" weil keine Vorgänger-Phase.
+                # Cancel/Esc → Abort-Confirmation.
+                LANG_CHOICE=$(whiptail --title "Sprache / Language" \
+                    --menu "Sprache wählen / Choose language" \
+                    12 60 2 \
+                    "DE" "Deutsch" \
+                    "EN" "English" \
+                    3>&1 1>&2 2>&3) || rc=$?
+                if [ "$rc" -eq 0 ]; then
+                    init_strings   # Strings für gewählte Sprache laden
+                fi
+                ;;
+
+            2)
+                # --- Phase 2: Zeitzone ---
+                TZ_VALUE=$(whiptail --title "$T_TZ_TITLE" \
+                    --cancel-button "$T_BACK" \
+                    --menu "$T_TZ_PROMPT" \
+                    16 70 5 \
+                    "UTC"            "$T_TZ_UTC" \
+                    "Europe/Vienna"  "$T_TZ_VIENNA" \
+                    "Asia/Nicosia"   "$T_TZ_NICOSIA" \
+                    "Europe/Berlin"  "$T_TZ_BERLIN" \
+                    "Europe/London"  "$T_TZ_LONDON" \
+                    3>&1 1>&2 2>&3) || rc=$?
+                ;;
+
+            3)
+                # --- Phase 3: Locales (Multi-Select, mit Idempotenz-Erkennung) ---
+                LOCALES_VALUE=$(whiptail --title "$T_LOC_TITLE" \
+                    --cancel-button "$T_BACK" \
+                    --checklist "$T_LOC_PROMPT" \
+                    18 65 8 \
+                    "de_AT.UTF-8" "$T_LOC_AT" "$(locale_state de_AT.UTF-8 ON)"  \
+                    "de_DE.UTF-8" "$T_LOC_DE" "$(locale_state de_DE.UTF-8 ON)"  \
+                    "de_CH.UTF-8" "$T_LOC_CH" "$(locale_state de_CH.UTF-8 ON)"  \
+                    "en_US.UTF-8" "$T_LOC_US" "$(locale_state en_US.UTF-8 ON)"  \
+                    "en_GB.UTF-8" "$T_LOC_GB" "$(locale_state en_GB.UTF-8 ON)"  \
+                    "fr_FR.UTF-8" "$T_LOC_FR" "$(locale_state fr_FR.UTF-8 OFF)" \
+                    "it_IT.UTF-8" "$T_LOC_IT" "$(locale_state it_IT.UTF-8 OFF)" \
+                    "es_ES.UTF-8" "$T_LOC_ES" "$(locale_state es_ES.UTF-8 OFF)" \
+                    3>&1 1>&2 2>&3) || rc=$?
+                if [ "$rc" -eq 0 ]; then
+                    LOCALES_VALUE=$(echo "$LOCALES_VALUE" | tr -d '"')
+                    if [ -z "$LOCALES_VALUE" ]; then
+                        whiptail --title "$T_LOC_NONE_TITLE" --msgbox "$T_LOC_NONE" 8 60
+                        continue   # nochmal Phase 3
+                    fi
+                fi
+                ;;
+
+            4)
+                # --- Phase 4: Default-Locale (dynamisch, Layout-Fix, idempotent) ---
+                local default_args=()
+                local locale_count=0
+                for loc in $LOCALES_VALUE; do
+                    default_args+=("$loc" "")
+                    locale_count=$((locale_count + 1))
+                done
+                local box_height=$((locale_count + 8))
+                [ "$box_height" -lt 12 ] && box_height=12
+
+                local current_default
+                current_default=$(current_default_locale)
+                local default_item_args=()
+                if [ -n "$current_default" ] && echo "$LOCALES_VALUE" | grep -qw "$current_default"; then
+                    default_item_args+=(--default-item "$current_default")
+                fi
+
+                DEFAULT_LOCALE_VALUE=$(whiptail --title "$T_DEFLOC_TITLE" \
+                    --cancel-button "$T_BACK" \
+                    "${default_item_args[@]}" \
+                    --menu "$T_DEFLOC_PROMPT" \
+                    "$box_height" 60 "$locale_count" \
+                    "${default_args[@]}" \
+                    3>&1 1>&2 2>&3) || rc=$?
+                ;;
+
+            5)
+                # --- Phase 5: Pakete (mit Idempotenz-Erkennung) ---
+                PKGS_VALUE=$(whiptail --title "$T_PKGS_TITLE" \
+                    --cancel-button "$T_BACK" \
+                    --checklist "$T_PKGS_PROMPT" \
+                    20 70 12 \
+                    "htop"          "$T_PKG_HTOP"     "$(pkg_state htop ON)" \
+                    "curl"          "$T_PKG_CURL"     "$(pkg_state curl ON)" \
+                    "wget"          "$T_PKG_WGET"     "$(pkg_state wget ON)" \
+                    "sudo"          "$T_PKG_SUDO"     "$(pkg_state sudo ON)" \
+                    "psmisc"        "$T_PKG_PSMISC"   "$(pkg_state psmisc ON)" \
+                    "net-tools"     "$T_PKG_NETTOOLS" "$(pkg_state net-tools ON)" \
+                    "iproute2"      "$T_PKG_IPROUTE2" "$(pkg_state iproute2 ON)" \
+                    "iputils-ping"  "$T_PKG_IPING"    "$(pkg_state iputils-ping ON)" \
+                    "gnupg"         "$T_PKG_GNUPG"    "$(pkg_state gnupg ON)" \
+                    "nano"          "$T_PKG_NANO"     "$(pkg_state nano ON)" \
+                    "pwgen"         "$T_PKG_PWGEN"    "$(pkg_state pwgen OFF)" \
+                    "socat"         "$T_PKG_SOCAT"    "$(pkg_state socat OFF)" \
+                    3>&1 1>&2 2>&3) || rc=$?
+                if [ "$rc" -eq 0 ]; then
+                    PKGS_VALUE=$(echo "$PKGS_VALUE" | tr -d '"')
+                fi
+                ;;
+
+            6)
+                # --- Phase 6: Bestätigung ---
+                # yesno-Dialog: --no-button als Zurück-Pendant ($T_APPLY = Yes)
+                whiptail --title "$T_CONFIRM_TITLE" \
+                    --yes-button "$T_APPLY" \
+                    --no-button "$T_BACK" \
+                    --yesno \
+"$T_CONFIRM_TZ$TZ_VALUE
+$T_CONFIRM_LOCALES$LOCALES_VALUE
+$T_CONFIRM_DEFLOC$DEFAULT_LOCALE_VALUE
+$T_CONFIRM_PKGS$PKGS_VALUE
+
+$T_CONFIRM_PROMPT" 18 70 || rc=$?
+                ;;
+        esac
+
+        if [ "$rc" -eq 0 ]; then
+            PHASE=$((PHASE + 1))
+        else
+            # Cancel/Esc = Zurück
+            if [ "$PHASE" -le 1 ]; then
+                # In Phase 1 ist „Zurück" = Abort-Confirmation
+                if whiptail --title "$T_ABORT_TITLE" --yesno "$T_ABORT_PROMPT" 8 60; then
+                    info "Abgebrochen."
+                    exit 1
+                fi
+                # else: bleibe in Phase 1
+            else
+                PHASE=$((PHASE - 1))
+            fi
+        fi
     done
-    # Box-Höhe = locale_count + 8 (Border + Title + Message + Buttons-Zeile)
-    local box_height=$((locale_count + 8))
-    [ "$box_height" -lt 12 ] && box_height=12
-
-    # Aktuell aktive Default-Locale als pre-selected markieren (idempotent)
-    local current_default
-    current_default=$(current_default_locale)
-    local default_item_args=()
-    if [ -n "$current_default" ] && echo "$LOCALES_VALUE" | grep -qw "$current_default"; then
-        default_item_args+=(--default-item "$current_default")
-    fi
-
-    DEFAULT_LOCALE_VALUE=$(whiptail --title "Default-Locale" \
-        "${default_item_args[@]}" \
-        --menu "Welche dieser Locales als System-Default (LANG)?" \
-        "$box_height" 60 "$locale_count" \
-        "${default_args[@]}" \
-        3>&1 1>&2 2>&3) || { info "Abgebrochen."; exit 1; }
-
-    # --- Pakete (mit Idempotenz-Erkennung) ---
-    # Pre-selected: bereits installierte Pakete + Skript-Defaults
-    PKGS_VALUE=$(whiptail --title "Basis-Pakete" \
-        --checklist "Welche Tools installieren? (Leertaste = toggle)" \
-        20 65 12 \
-        "htop"          "Prozess-Monitor"          "$(pkg_state htop ON)" \
-        "curl"          "HTTP-Client"              "$(pkg_state curl ON)" \
-        "wget"          "HTTP-Downloader"          "$(pkg_state wget ON)" \
-        "sudo"          "Privilege-Wechsel"        "$(pkg_state sudo ON)" \
-        "psmisc"        "killall, fuser, pstree"   "$(pkg_state psmisc ON)" \
-        "net-tools"     "ifconfig, route, netstat" "$(pkg_state net-tools ON)" \
-        "iproute2"      "ip a, ip r, ss"           "$(pkg_state iproute2 ON)" \
-        "iputils-ping"  "ping"                     "$(pkg_state iputils-ping ON)" \
-        "gnupg"         "GPG für Repos"            "$(pkg_state gnupg ON)" \
-        "nano"          "Editor"                   "$(pkg_state nano ON)" \
-        "pwgen"         "Passwort-Generator"       "$(pkg_state pwgen OFF)" \
-        "socat"         "Universal-Socket-Tool"    "$(pkg_state socat OFF)" \
-        3>&1 1>&2 2>&3) || { info "Abgebrochen."; exit 1; }
-    PKGS_VALUE=$(echo "$PKGS_VALUE" | tr -d '"')
-
-    # --- Bestätigung ---
-    whiptail --title "Übersicht — bitte prüfen" --yesno \
-"Zeitzone:        $TZ_VALUE
-Locales:         $LOCALES_VALUE
-Default-Locale:  $DEFAULT_LOCALE_VALUE
-Pakete:          $PKGS_VALUE
-
-Anwenden?" 18 70 || { info "Abgebrochen."; exit 1; }
 }
 
 collect_inputs_noninteractive() {
+    init_strings   # T_-Strings auch im non-interactive-Pfad setzen (für apply_packages, finish, etc.)
+
     TZ_VALUE="${TZ:-UTC}"
     LOCALES_VALUE="${LOCALES:-de_AT.UTF-8 en_US.UTF-8}"
     DEFAULT_LOCALE_VALUE="${DEFAULT_LOCALE:-de_AT.UTF-8}"
@@ -299,11 +532,108 @@ apply_locales() {
 # === Phase 4 — Pakete ===
 
 apply_packages() {
-    info "Pakete installieren (--no-install-recommends): $PKGS_VALUE"
-    # Intentional word-splitting für Paket-Liste in $PKGS_VALUE
-    # shellcheck disable=SC2086
-    apt-get install -y -qq --no-install-recommends $PKGS_VALUE </dev/null
-    ok "Pakete installiert."
+    # Diff-Logik:
+    #   to_install = in PKGS_VALUE, aber nicht installiert
+    #   to_remove  = in PKG_MENU_LIST + installiert, aber nicht in PKGS_VALUE
+    #                (nur Menü-Pakete kommen für Deinstallation in Frage —
+    #                Schutzschicht gegen System-Pakete)
+    local to_install=""
+    local to_remove=""
+    local pkg
+
+    for pkg in $PKGS_VALUE; do
+        if ! pkg_is_installed "$pkg"; then
+            to_install="$to_install $pkg"
+        fi
+    done
+
+    for pkg in $PKG_MENU_LIST; do
+        if pkg_is_installed "$pkg"; then
+            if ! echo " $PKGS_VALUE " | grep -qw "$pkg"; then
+                to_remove="$to_remove $pkg"
+            fi
+        fi
+    done
+
+    # --- Install-Phase ---
+    if [ -n "${to_install// /}" ]; then
+        info "Pakete installieren (--no-install-recommends):$to_install"
+        # shellcheck disable=SC2086
+        apt-get install -y -qq --no-install-recommends $to_install </dev/null
+        ok "Pakete installiert."
+    else
+        info "Alle gewünschten Pakete bereits installiert — kein Install."
+    fi
+
+    # --- Remove-Phase (nur mit explizitem User-Yes) ---
+    if [ -n "${to_remove// /}" ]; then
+        local confirm_remove="no"
+        if [ "$TTY_MODE" = "interactive" ]; then
+            if whiptail --title "$T_REMOVE_TITLE" --yesno \
+"$T_REMOVE_PROMPT_PRE
+
+$to_remove
+
+$T_REMOVE_PROMPT_POST" \
+                15 65; then
+                confirm_remove="yes"
+            fi
+        else
+            # Non-interactive: opt-in via ENV REMOVE_DESELECTED=yes
+            if [ "${REMOVE_DESELECTED:-no}" = "yes" ]; then
+                confirm_remove="yes"
+            fi
+        fi
+
+        if [ "$confirm_remove" = "yes" ]; then
+            info "Pakete deinstallieren:$to_remove"
+            # shellcheck disable=SC2086
+            apt-get remove -y -qq $to_remove </dev/null
+            ok "Pakete deinstalliert."
+        else
+            info "Deinstallation übersprungen — abgewählte Pakete bleiben."
+        fi
+    fi
+}
+
+# === Phase 5b — apt dist-upgrade-Prompt ===
+
+apply_dist_upgrade_prompt() {
+    info "Prüfe verfügbare Pakete-Updates..."
+    # apt list --upgradable spuckt eine Header-Zeile + N Pakete-Zeilen
+    local upgradable
+    upgradable=$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -c '/' || true)
+
+    if [ "$upgradable" -eq 0 ]; then
+        ok "Keine Pakete-Updates verfügbar — System ist aktuell."
+        return 0
+    fi
+
+    info "$upgradable Pakete-Updates verfügbar."
+
+    local confirm="no"
+    if [ "$TTY_MODE" = "interactive" ]; then
+        if whiptail --title "$T_UPGRADE_TITLE" --yesno \
+"$upgradable $T_UPGRADE_PROMPT_PRE
+
+$T_UPGRADE_PROMPT_POST" \
+            14 65; then
+            confirm="yes"
+        fi
+    else
+        # Non-interactive: opt-in via ENV DIST_UPGRADE=yes für Auto-Run
+        if [ "${DIST_UPGRADE:-no}" = "yes" ]; then
+            confirm="yes"
+        fi
+    fi
+
+    if [ "$confirm" = "yes" ]; then
+        info "apt dist-upgrade ausführen..."
+        apt-get dist-upgrade -y -qq </dev/null
+        ok "Updates installiert."
+    else
+        info "Updates übersprungen — System bleibt auf aktuellem Stand."
+    fi
 }
 
 # === Phase 5 — EDITOR ===
@@ -327,16 +657,15 @@ finish() {
     lang_line=$(grep '^LANG=' /etc/default/locale 2>/dev/null | cut -d= -f2 || echo "?")
 
     local msg
-    msg="Setup abgeschlossen.
+    msg="$T_FINISH_HEADER
 
-Zeitzone:        $(cat /etc/timezone)
-Default-Locale:  ${lang_line}
+$T_FINISH_TZ$(cat /etc/timezone)
+$T_FINISH_DEFLOC${lang_line}
 
-Bitte einmal 'exit' und neu einloggen,
-damit die Locale in der Shell-Session greift."
+$(echo -e "$T_FINISH_HINT")"
 
     if [ "$TTY_MODE" = "interactive" ]; then
-        whiptail --title "Fertig" --msgbox "$msg" 14 60
+        whiptail --title "$T_FINISH_TITLE" --msgbox "$msg" 14 60
     else
         echo
         echo "------------------------------------------------------------"
@@ -363,6 +692,7 @@ main() {
     apply_timezone
     apply_locales
     apply_packages
+    apply_dist_upgrade_prompt
     apply_editor
     finish
 
