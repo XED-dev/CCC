@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.8.2"
+VERSION="0.8.3"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -79,11 +79,26 @@ PIPX_BIN_DIR_PATH="/usr/local/bin"
 # Pattern: reference_no_snap_in_lxc.md (AI036, 2026-05-04).
 SNAP_REDIRECT_PACKAGES_LIST="firefox thunderbird chromium-browser gnome-software-plugin-snap snapd"
 
-# Ubuntu-Pro-Werbung (esm-apps Promo) — Community-Only-Policy.
-# `apt update` / `apt dist-upgrade` zeigen sonst Werbe-Hinweise.
-# cBOX@-Boxen setzen voll auf Community-Versionen, daher purgen wir
-# ubuntu-pro-client + ubuntu-advantage-tools im self_heal_dpkg().
-UBUNTU_PRO_PACKAGES_LIST="ubuntu-pro-client ubuntu-advantage-tools"
+# Persistente Audit-Log-Datei (Forensik-Trail über alle firstboot-Runs).
+# Plus: msgbox-Konservation am Ende von Phase 7+7b (current-run UI-Anzeige).
+# Beide ergänzen sich — Log = Forensik, msgbox = User-Sichtbarkeit.
+FIRSTBOOT_LOG_FILE="/var/log/xed-firstboot.log"
+
+# Cascade-Schutz für apt purge: Hard-Deps werden automatisch mit-entfernt;
+# bei system-critical Meta-Paketen zerstört das den Display-Stack. Whitelist
+# wird in safe_purge() gegen die simulate-Cascade geprüft, Abort bei Treffer.
+CRITICAL_PACKAGES_WHITELIST=(
+    "vanilla-gnome-desktop"
+    "gnome-core"
+    "gnome-shell"
+    "gnome-shell-common"
+    "gnome-session"
+    "gnome-terminal"
+    "ubuntu-minimal"
+    "xrdp"
+    "xorgxrdp"
+    "dbus-x11"
+)
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -113,30 +128,55 @@ banner() {
     echo
 }
 
-# Output-Helper schreiben optional zusätzlich in $PHASE_LOG_FILE, wenn diese
-# Variable gesetzt ist. Wird in main() zwischen Phase 7 und finish gesetzt,
-# damit der Phase-7+7b-Log am Ende in einer Whiptail-msgbox konserviert
-# werden kann (Support-Wunsch). Andere Phasen bleiben unverlogged.
+# Output-Helper schreiben in drei Ziele:
+# 1. stdout/stderr (immer) — User-Sichtbarkeit
+# 2. $FIRSTBOOT_LOG_FILE (immer wenn gesetzt) — persistenter Audit-Trail
+# 3. $PHASE_LOG_FILE (wenn gesetzt — nur Phase 7+7b) — current-run msgbox
+
+# Append zur persistenten Audit-Log-Datei mit ISO-Zeitstempel.
+log_to_file() {
+    local level="$1"; shift
+    [ -n "${FIRSTBOOT_LOG_FILE:-}" ] || return 0
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [$level] $*" >> "$FIRSTBOOT_LOG_FILE" 2>/dev/null || true
+}
+
+# Initialisiert die Log-Datei mit Run-Header. Wird in main() nach require_root
+# aufgerufen (root nötig für /var/log-Zugriff).
+init_log_file() {
+    [ -n "${FIRSTBOOT_LOG_FILE:-}" ] || return 0
+    mkdir -p "$(dirname "$FIRSTBOOT_LOG_FILE")" 2>/dev/null || true
+    {
+        echo ""
+        echo "================================================================"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [INIT] firstboot.sh v${VERSION} run start"
+        echo "================================================================"
+    } >> "$FIRSTBOOT_LOG_FILE" 2>/dev/null || true
+}
+
 err()  {
     echo "ERROR: $*" >&2
+    log_to_file "ERROR" "$*"
     if [ -n "${PHASE_LOG_FILE:-}" ]; then
         echo "ERROR: $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
     fi
 }
 info() {
     echo "→ $*"
+    log_to_file "INFO" "$*"
     if [ -n "${PHASE_LOG_FILE:-}" ]; then
         echo "→ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
     fi
 }
 ok()   {
     echo "✔ $*"
+    log_to_file "OK" "$*"
     if [ -n "${PHASE_LOG_FILE:-}" ]; then
         echo "✔ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
     fi
 }
 warn() {
     echo "⚠ $*" >&2
+    log_to_file "WARN" "$*"
     if [ -n "${PHASE_LOG_FILE:-}" ]; then
         echo "⚠ $*" >> "$PHASE_LOG_FILE" 2>/dev/null || true
     fi
@@ -832,19 +872,68 @@ apply_editor() {
 #
 # Pattern: reference_pipx_for_cli_tools.md (AI036, 2026-05-04).
 
-# Self-Heal-Helper: heilt broken dpkg-state vor apt-Aufrufen.
-# Snap-Redirect-Pakete (firefox/thunderbird/chromium) auf Ubuntu 22.04+
-# bricht im LXC ohne snapd. Idempotent: no-op auf sauberem System,
-# voll-aktiv auf broken System (z.B. nach v0.0.2-Bruch).
+# Cascade-Schutz für apt purge: Hard-Deps werden automatisch mit-entfernt;
+# bei system-critical Meta-Paketen (z.B. vanilla-gnome-desktop, ubuntu-minimal)
+# zerstört das den Stack. Pattern: simulate -> cascade parsen -> Whitelist-Check
+# -> nur dann purgen.
+#
+# Argument: $1 = Paket-Liste (Space-separated, ungequotet wegen apt-get-Syntax).
+# Return: 0 = purge ausgefuehrt (oder no-op), 1 = abort wegen Whitelist-Verletzung.
+safe_purge() {
+    local pkgs="$1"
+    local cascade
+    # shellcheck disable=SC2086
+    cascade=$(apt-get purge --simulate -y $pkgs 2>/dev/null \
+              | awk '/^Remv / {print $2}')
+
+    local crit
+    for crit in "${CRITICAL_PACKAGES_WHITELIST[@]}"; do
+        if echo "$cascade" | grep -qx "$crit"; then
+            err "ABORT safe_purge: cascade entfernt kritisches Paket: $crit"
+            err "  Vollstaendige Cascade:"
+            echo "$cascade" | while read -r p; do err "    - $p"; done
+            err "  Skript-Fix noetig: Paket-Liste reduzieren ODER Whitelist anpassen."
+            err "  Recovery: kein automatischer Purge, '$pkgs' bleibt installiert."
+            return 1
+        fi
+    done
+
+    info "safe_purge cleared (cascade: $(echo "$cascade" | tr '\n' ' '))"
+    # shellcheck disable=SC2086
+    apt-get purge -y -qq $pkgs 2>/dev/null || true
+    return 0
+}
+
+# Ubuntu-Pro-Werbung non-destruktiv deaktivieren.
+# Mainstream-Pfad statt destruktivem purge: pro CLI + APT-Hook-mv + systemd.
+# Doku: documentation.ubuntu.com/pro-client/howtoguides/disable_enable_apt_news/
+self_heal_pro_notice() {
+    info "Self-Heal: Ubuntu-Pro-Werbung deaktivieren (Community-Only, non-destruktiv)..."
+
+    # A — pro CLI (offizieller Pfad ab Pro-Client v30)
+    if command -v pro >/dev/null 2>&1; then
+        pro config set apt_news=false 2>&1 \
+            | tee -a "${FIRSTBOOT_LOG_FILE:-/dev/null}" || true
+    fi
+
+    # B — ESM-APT-Hook deaktivieren via mv (no-deletion-konform, reversibel)
+    if [ -f /etc/apt/apt.conf.d/20apt-esm-hook.conf ]; then
+        mv /etc/apt/apt.conf.d/20apt-esm-hook.conf \
+           /etc/apt/apt.conf.d/20apt-esm-hook.conf.bak
+        info "ESM-APT-Hook deaktiviert: 20apt-esm-hook.conf -> .bak"
+    fi
+
+    # C — apt-news.service deaktivieren wenn vorhanden
+    systemctl disable --now apt-news.service 2>/dev/null || true
+}
+
+# Self-Heal vor apt-Aufrufen. Idempotent: no-op auf sauberem System.
+# Snap-Redirect-Pakete in LXC unzuverlaessig (snapd-Bugs); safe_purge()
+# schuetzt vor Cascade-Removes von Meta-Paketen.
 # Pattern: reference_no_snap_in_lxc.md.
 self_heal_dpkg() {
-    info "Self-Heal: snap-Redirect-Pakete entfernen (LXC-Kompatibilität)..."
-    # shellcheck disable=SC2086 # PACKAGE_LIST bewusst ungequotet (mehrere Pakete)
-    apt-get purge -y -qq ${SNAP_REDIRECT_PACKAGES_LIST} 2>/dev/null || true
-
-    info "Self-Heal: Ubuntu-Pro-Werbung entfernen (Community-Only-Policy)..."
-    # shellcheck disable=SC2086
-    apt-get purge -y -qq ${UBUNTU_PRO_PACKAGES_LIST} 2>/dev/null || true
+    info "Self-Heal: snap-Redirect-Pakete entfernen (LXC-Kompatibilitaet, mit Cascade-Schutz)..."
+    safe_purge "$SNAP_REDIRECT_PACKAGES_LIST" || true
 
     info "Self-Heal: dpkg --configure -a..."
     dpkg --configure -a 2>/dev/null || true
@@ -900,8 +989,9 @@ apply_ccc_installation() {
         return 0
     fi
 
-    # --- Schritt 0: Self-Heal-dpkg vor jedem apt-Aufruf ---
+    # --- Schritt 0: Self-Heal vor jedem apt-Aufruf (dpkg + Pro-Notice) ---
     self_heal_dpkg
+    self_heal_pro_notice
 
     # --- Schritt 1: pipx via apt ---
     info "pipx installieren (apt)..."
@@ -1051,6 +1141,7 @@ $(echo -e "$T_FINISH_HINT")"
 main() {
     banner
     require_root
+    init_log_file
     require_supported_distro
     bootstrap_apt
     detect_tty
