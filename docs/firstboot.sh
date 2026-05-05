@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.8.1"
+VERSION="0.8.2"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -78,6 +78,12 @@ PIPX_BIN_DIR_PATH="/usr/local/bin"
 # Wird im self_heal_dpkg() purgiert vor jedem apt-Aufruf in Phase 7.
 # Pattern: reference_no_snap_in_lxc.md (AI036, 2026-05-04).
 SNAP_REDIRECT_PACKAGES_LIST="firefox thunderbird chromium-browser gnome-software-plugin-snap snapd"
+
+# Ubuntu-Pro-Werbung (esm-apps Promo) — Community-Only-Policy.
+# `apt update` / `apt dist-upgrade` zeigen sonst Werbe-Hinweise.
+# cBOX@-Boxen setzen voll auf Community-Versionen, daher purgen wir
+# ubuntu-pro-client + ubuntu-advantage-tools im self_heal_dpkg().
+UBUNTU_PRO_PACKAGES_LIST="ubuntu-pro-client ubuntu-advantage-tools"
 
 # Pakete, die im Whiptail-Menü angeboten werden (für deselect=uninstall-Diff).
 # Pakete ausserhalb dieser Liste bleiben unangetastet — Sicherheits-Schutzschicht
@@ -835,6 +841,10 @@ self_heal_dpkg() {
     info "Self-Heal: snap-Redirect-Pakete entfernen (LXC-Kompatibilität)..."
     # shellcheck disable=SC2086 # PACKAGE_LIST bewusst ungequotet (mehrere Pakete)
     apt-get purge -y -qq ${SNAP_REDIRECT_PACKAGES_LIST} 2>/dev/null || true
+
+    info "Self-Heal: Ubuntu-Pro-Werbung entfernen (Community-Only-Policy)..."
+    # shellcheck disable=SC2086
+    apt-get purge -y -qq ${UBUNTU_PRO_PACKAGES_LIST} 2>/dev/null || true
 
     info "Self-Heal: dpkg --configure -a..."
     dpkg --configure -a 2>/dev/null || true
