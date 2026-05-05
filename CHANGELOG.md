@@ -5,6 +5,23 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.0.2] — 2026-05-04
+
+### Geändert
+
+- **Branding aktualisiert** — `cBUZZ Container Control` →
+  `cBOX@ /Container Control`. Konsistente Brand-Identität für
+  cBOX.at/YOU by XED.dev Tools via Collective Context (CC).
+- `pyproject.toml` description + Typer-CLI-Help + README.md + Pages-Landing
+  (`docs/index.html`: Title + h1 + Footer) konsistent gebrandet.
+- keyword in `pyproject.toml`: `cbuzz` → `cbox`.
+
+### Architektur
+
+Keine Code-Logic-Änderung — reines Brand-Update als Patch-Bump.
+
+[0.0.2]: https://github.com/XED-dev/CCC/releases/tag/v0.0.2
+
 ## [0.0.1] — 2026-05-03
 
 ### Hinzugefügt

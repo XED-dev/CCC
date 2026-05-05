@@ -1,4 +1,4 @@
-# XED /CCC — cBUZZ Container Control
+# XED /CCC — cBOX@ /Container Control
 
 > **Bash-Bootstrap und Werkzeuge für nested LXC-Stacks** auf Proxmox VE 9 mit Debian 13 / Ubuntu 24.04+.
 >
@@ -73,7 +73,7 @@ stdin und erzwingt Non-Interactive-Mode mit ENV-Defaults.
 
 **Bewusst nicht enthalten:** Bridge-/iptables-/nested-LXC-Setup. Das kommt
 mit `lxc-host-setup.sh` (Skript 2/3, geplant) als separates Skript für
-cBUZZ-Outer-Container.
+cBOX-Outer-Container.
 
 ---
 

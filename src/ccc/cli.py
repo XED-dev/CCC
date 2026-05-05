@@ -20,10 +20,11 @@ from ccc.roles import AVAILABLE_ROLES, get_role
 
 app = typer.Typer(
     name="ccc",
-    help="cBUZZ Container Control — Rollen-Konfiguration für LXC-Boxen.\n\n"
+    help="cBOX@ /Container Control — Rollen-Konfiguration für LXC-Boxen.\n\n"
     "Nach `firstboot.sh` (Bash-Basis-Setup) kommt `ccc` als Python-Tool für\n"
     "Rollen-Konfiguration: pmDESK (Gnome-Desktop), lxcHOST (Firewall),\n"
-    "osNGINX (Reverse-Proxy), commBOX (Communication-Stack) usw.",
+    "osNGINX (Reverse-Proxy), commBOX (Communication-Stack) usw.\n\n"
+    "cBOX.at/YOU by XED.dev Tools via Collective Context (CC).",
     no_args_is_help=True,
     add_completion=False,
 )

@@ -1,4 +1,4 @@
-"""xed-ccc — cBUZZ Container Control.
+"""xed-ccc — cBOX@ /Container Control.
 
 Python-Werkzeug für nested LXC-Stacks auf Proxmox VE 9 mit Debian/Ubuntu.
 Pendant zu `pct` (Proxmox Container Toolkit) — vertraut wie pct, aber

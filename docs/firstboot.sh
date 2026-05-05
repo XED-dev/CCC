@@ -1,5 +1,5 @@
 #!/bin/bash
-# firstboot.sh — XED-CCC Bash-Basis-Setup für frische Debian/Ubuntu-Boxen
+# firstboot.sh — cBOX@ /Container Control Bash-Basis-Setup für frische Debian/Ubuntu-Boxen
 #
 # Quelle:    https://github.com/XED-dev/CCC
 #
@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.8.0"
+VERSION="0.8.1"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -100,8 +100,9 @@ PKGS_VALUE=""
 banner() {
     echo
     echo "========================================================================"
-    echo "  XED-CCC ${SCRIPT_NAME} v${VERSION}"
+    echo "  cBOX@ /Container Control — ${SCRIPT_NAME} v${VERSION}"
     echo "  Basis-Setup für frische Debian/Ubuntu-LXC-Boxen"
+    echo "  cBOX.at/YOU by XED.dev Tools via Collective Context (CC)"
     echo "========================================================================"
     echo
 }
@@ -280,8 +281,8 @@ init_strings() {
             T_UPGRADE_PROMPT_POST="Run 'apt dist-upgrade + autoremove + autoclean' now?\n\n(Recommended for an up-to-date box. May take some\nminutes depending on update size.)"
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
-            T_CCC_TITLE="XED /CCC Python Tool"
-            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe XED /CC suite (Python tools) for the actual work:\n\n  ccc create pmDESK        # role composition (Gnome + xrdp + ...)\n  cca install gnome        # atomic app install\n  cca install ghost        # blog / CMS\n  cca install wordops      # LEMP stack manager\n  cca install miab         # mail-in-a-box\n\nInstall Python stack + ccc + cca tools now?\n\n(Optional — can also be done later by re-running\n this firstboot.sh.)"
+            T_CCC_TITLE="cBOX@ /CCC Python Tool"
+            T_CCC_PROMPT="firstboot.sh is the Bash basic setup. The next step is\nthe cBOX@ /CC-Suite (Python tools) for the actual work:\n\n  ccc create pmDESK        # role composition (Gnome + xrdp + ...)\n  cca install gnome        # atomic app install\n  cca install ghost        # blog / CMS\n  cca install wordops      # LEMP stack manager\n  cca install miab         # mail-in-a-box\n\nInstall Python stack + ccc + cca tools now?\n\n(Optional — can also be done later by re-running\n this firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Done"
@@ -362,8 +363,8 @@ init_strings() {
             T_UPGRADE_PROMPT_POST="Jetzt 'apt dist-upgrade + autoremove + autoclean' durchführen?\n\n(Empfohlen für aktuelle Box. Kann je nach Update-Umfang\neinige Minuten dauern.)"
 
             # --- Phase 7: ccc-Python-Tool-Bridge ---
-            T_CCC_TITLE="XED /CCC Python-Tool"
-            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht die XED /CC-Suite (Python-Tools) bereit:\n\n  ccc create pmDESK        # Rollen-Komposition (Gnome + xrdp + ...)\n  cca install gnome        # atomare App-Installation\n  cca install ghost        # Blog / CMS\n  cca install wordops      # LEMP-Stack-Manager\n  cca install miab         # Mail-in-a-Box\n\nPython-Stack + ccc + cca jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden\n via Re-Run dieses firstboot.sh.)"
+            T_CCC_TITLE="cBOX@ /CCC Python-Tool"
+            T_CCC_PROMPT="firstboot.sh ist das Bash-Basis-Setup. Als nächster\nSchritt steht die cBOX@ /CC-Suite (Python-Tools) bereit:\n\n  ccc create pmDESK        # Rollen-Komposition (Gnome + xrdp + ...)\n  cca install gnome        # atomare App-Installation\n  cca install ghost        # Blog / CMS\n  cca install wordops      # LEMP-Stack-Manager\n  cca install miab         # Mail-in-a-Box\n\nPython-Stack + ccc + cca jetzt installieren?\n\n(Optional — kann auch später nachgeholt werden\n via Re-Run dieses firstboot.sh.)"
 
             # --- Finish ---
             T_FINISH_TITLE="Fertig"
