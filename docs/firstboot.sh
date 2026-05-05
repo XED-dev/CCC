@@ -44,7 +44,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.8.3"
+VERSION="0.8.4"
 SCRIPT_NAME="firstboot.sh"
 TTY_MODE=""
 LANG_CHOICE=""   # "DE" oder "EN", gesetzt durch state-machine Phase 1
@@ -1182,6 +1182,16 @@ main() {
     touch "$FIRSTBOOT_MARKER"
 
     ok "${SCRIPT_NAME} durchgelaufen — Box bereit."
+
+    # Hint-Block: Audit-Log-Pfad + Lese-Beispiele für SysOps/DevOps/AI-Agent.
+    # Wartungs-Pfad sichtbar machen — Logs sind A+O des Developer-Lebens.
+    echo
+    info "Audit-Log dieses Runs: ${FIRSTBOOT_LOG_FILE}"
+    info "  tail -50 ${FIRSTBOOT_LOG_FILE}             # letzte 50 Zeilen"
+    info "  less ${FIRSTBOOT_LOG_FILE}                 # vollstaendig durchblaettern"
+    info "  grep ERROR ${FIRSTBOOT_LOG_FILE}           # nur Fehler-Zeilen"
+    info "  grep WARN ${FIRSTBOOT_LOG_FILE}            # nur Warnungen"
+    echo
 }
 
 main "$@"
