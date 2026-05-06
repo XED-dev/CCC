@@ -47,7 +47,7 @@ from ccc.commands.phases.locale import (
 )
 from ccc.system import whiptail
 from ccc.system.audit_log import DEFAULT_PATH as AUDIT_LOG_PATH
-from ccc.system.audit_log import init_audit_log
+from ccc.system.audit_log import init_audit_log, phase
 from ccc.system.i18n import t
 from ccc.system.marker import set_first_run_done
 from ccc.system.pkg import current_default_locale, locale_state, pkg_state
@@ -126,83 +126,98 @@ def bootstrap_system(
     """firstboot Phasen 2-7 als Python-Verb."""
 
     log = init_audit_log(namespace="xed.bootstrap")
-    log.info("bootstrap-system start")
 
-    interactive = sys.stdin.isatty()
-    args_complete = all([lang, tz, locales, default_locale, pkgs])
+    # Outer-Boundary: 'ccc:bootstrap-system' wraps die gesamte Verb-
+    # Ausfuehrung. Bei Exception schreibt der Context-Manager phase_end
+    # (rc=1) ins Audit-Log und re-raised. Sprach-Uebergang aus dem
+    # firstboot.sh-Phase-4-Hand-off (kein matching phase_end dort) endet
+    # in dieses ccc:bootstrap-system start (klare Boundary).
+    with phase("ccc:bootstrap-system", logger=log):
+        interactive = sys.stdin.isatty()
+        args_complete = all([lang, tz, locales, default_locale, pkgs])
 
-    if interactive and not args_complete:
-        inputs = _collect_inputs_interactive(
-            lang=lang, tz=tz, locales=locales,
-            default_locale=default_locale, pkgs=pkgs,
-        )
-        if inputs is None:
-            log.info("User-Abbruch in Whiptail-State-Machine")
-            raise typer.Exit(code=1)
-        lang = inputs["lang"]
-        tz = inputs["tz"]
-        locales_list = inputs["locales"]
-        default_locale = inputs["default_locale"]
-        pkgs_list = inputs["pkgs"]
-    else:
-        lang = lang or DEFAULT_LANG
-        tz = tz or DEFAULT_TZ
-        locales_list = (locales or DEFAULT_LOCALES).split()
-        default_locale = default_locale or DEFAULT_DEFAULT_LOCALE
-        pkgs_list = (pkgs or DEFAULT_PKGS).split()
+        if interactive and not args_complete:
+            inputs = _collect_inputs_interactive(
+                lang=lang, tz=tz, locales=locales,
+                default_locale=default_locale, pkgs=pkgs,
+            )
+            if inputs is None:
+                log.info("User-Abbruch in Whiptail-State-Machine")
+                raise typer.Exit(code=1)
+            lang = inputs["lang"]
+            tz = inputs["tz"]
+            locales_list = inputs["locales"]
+            default_locale = inputs["default_locale"]
+            pkgs_list = inputs["pkgs"]
+        else:
+            lang = lang or DEFAULT_LANG
+            tz = tz or DEFAULT_TZ
+            locales_list = (locales or DEFAULT_LOCALES).split()
+            default_locale = default_locale or DEFAULT_DEFAULT_LOCALE
+            pkgs_list = (pkgs or DEFAULT_PKGS).split()
 
-    console.print(f"[cyan]→ Sprache:[/cyan]        {lang}")
-    console.print(f"[cyan]→ Zeitzone:[/cyan]       {tz}")
-    console.print(f"[cyan]→ Locales:[/cyan]        {' '.join(locales_list)}")
-    console.print(f"[cyan]→ Default-Locale:[/cyan] {default_locale}")
-    console.print(f"[cyan]→ Pakete:[/cyan]         {' '.join(pkgs_list)}")
-    console.print()
+        console.print(f"[cyan]→ Sprache:[/cyan]        {lang}")
+        console.print(f"[cyan]→ Zeitzone:[/cyan]       {tz}")
+        console.print(f"[cyan]→ Locales:[/cyan]        {' '.join(locales_list)}")
+        console.print(f"[cyan]→ Default-Locale:[/cyan] {default_locale}")
+        console.print(f"[cyan]→ Pakete:[/cyan]         {' '.join(pkgs_list)}")
+        console.print()
 
-    # Self-Heal-Pre-Phase
-    console.print("[cyan]→ Self-Heal: dpkg/apt-State[/cyan]")
-    self_heal_dpkg(logger=log)
-    console.print("[cyan]→ Self-Heal: Ubuntu-Pro-Werbung deaktivieren[/cyan]")
-    disable_pro_notice(logger=log)
+        # Self-Heal-Pre-Phase
+        console.print("[cyan]→ Self-Heal: dpkg/apt-State[/cyan]")
+        with phase("ccc:self-heal-dpkg", logger=log):
+            self_heal_dpkg(logger=log)
+        console.print("[cyan]→ Self-Heal: Ubuntu-Pro-Werbung deaktivieren[/cyan]")
+        with phase("ccc:self-heal-pro-notice", logger=log):
+            disable_pro_notice(logger=log)
 
-    # Phasen-Composition
-    console.print("[cyan]→ Phase: Zeitzone[/cyan]")
-    apply_timezone(tz, logger=log)
-    console.print("[cyan]→ Phase: Locales[/cyan]")
-    apply_locales(locales_list, default_locale, logger=log)
-    console.print("[cyan]→ Phase: Pakete[/cyan]")
-    apply_packages(
-        pkgs_list, interactive=interactive,
-        remove_deselected=remove_deselected, lang=lang, logger=log,
-    )
-    console.print("[cyan]→ Phase: Dist-Upgrade[/cyan]")
-    apply_dist_upgrade(
-        interactive=interactive, dist_upgrade=dist_upgrade,
-        lang=lang, logger=log,
-    )
-    console.print("[cyan]→ Phase: Editor[/cyan]")
-    apply_editor(logger=log)
+        # Phasen-Composition
+        console.print("[cyan]→ Phase: Zeitzone[/cyan]")
+        with phase("ccc:apply-timezone", logger=log, tz=tz):
+            apply_timezone(tz, logger=log)
+        console.print("[cyan]→ Phase: Locales[/cyan]")
+        with phase(
+            "ccc:apply-locales", logger=log, count=len(locales_list),
+        ):
+            apply_locales(locales_list, default_locale, logger=log)
+        console.print("[cyan]→ Phase: Pakete[/cyan]")
+        with phase(
+            "ccc:apply-packages", logger=log, count=len(pkgs_list),
+        ):
+            apply_packages(
+                pkgs_list, interactive=interactive,
+                remove_deselected=remove_deselected, lang=lang, logger=log,
+            )
+        console.print("[cyan]→ Phase: Dist-Upgrade[/cyan]")
+        with phase("ccc:apply-dist-upgrade", logger=log):
+            apply_dist_upgrade(
+                interactive=interactive, dist_upgrade=dist_upgrade,
+                lang=lang, logger=log,
+            )
+        console.print("[cyan]→ Phase: Editor[/cyan]")
+        with phase("ccc:apply-editor", logger=log):
+            apply_editor(logger=log)
 
-    set_first_run_done()
-    log.info("bootstrap-system done")
-    console.print("[green]✔ bootstrap-system durchgelaufen — Box bereit.[/green]")
+        set_first_run_done()
+        console.print("[green]✔ bootstrap-system durchgelaufen — Box bereit.[/green]")
 
-    # Hint-Block: Audit-Log-Pfad + Lese-Beispiele + Verb-Uebersicht.
-    # Wartungs-Pfad sichtbar machen — Logs sind A+O des Developer-Lebens
-    # (AI036-Direktive 2026-05-04, Bash-Pattern aus firstboot.sh v0.8.4
-    # bei v0.9.0-Refactor zunaechst weggefallen, in v0.1.1 nachgezogen).
-    audit_log_str = str(AUDIT_LOG_PATH)
-    console.print()
-    console.print(f"[cyan]→ Audit-Log dieses Runs:[/cyan] {audit_log_str}")
-    console.print(f"    tail -50 {audit_log_str}     # letzte 50 Zeilen")
-    console.print(f"    less {audit_log_str}         # vollstaendig durchblaettern")
-    console.print(f"    grep ERROR {audit_log_str}   # nur Fehler-Zeilen")
-    console.print(f"    grep WARN {audit_log_str}    # nur Warnungen")
-    console.print()
-    console.print("[cyan]Verfuegbare Verben:[/cyan]")
-    console.print("    ccc list                # Rollen")
-    console.print("    cca list                # Apps")
-    console.print("    cca install <app>       # z.B. cca install gnome")
-    console.print()
+        # Hint-Block: Audit-Log-Pfad + Lese-Beispiele + Verb-Uebersicht.
+        # Wartungs-Pfad sichtbar machen — Logs sind A+O des Developer-Lebens
+        # (AI036-Direktive 2026-05-04, Bash-Pattern aus firstboot.sh v0.8.4
+        # bei v0.9.0-Refactor zunaechst weggefallen, in v0.1.1 nachgezogen).
+        audit_log_str = str(AUDIT_LOG_PATH)
+        console.print()
+        console.print(f"[cyan]→ Audit-Log dieses Runs:[/cyan] {audit_log_str}")
+        console.print(f"    tail -50 {audit_log_str}     # letzte 50 Zeilen")
+        console.print(f"    less {audit_log_str}         # vollstaendig durchblaettern")
+        console.print(f"    grep ERROR {audit_log_str}   # nur Fehler-Zeilen")
+        console.print(f"    grep WARN {audit_log_str}    # nur Warnungen")
+        console.print()
+        console.print("[cyan]Verfuegbare Verben:[/cyan]")
+        console.print("    ccc list                # Rollen")
+        console.print("    cca list                # Apps")
+        console.print("    cca install <app>       # z.B. cca install gnome")
+        console.print()
 
 
 def _collect_inputs_interactive(

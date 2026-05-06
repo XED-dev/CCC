@@ -5,6 +5,51 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0] — 2026-05-07
+
+### Hinzugefügt (Audit-Log-Schema-Erweiterung)
+
+- **`[PHASE]` und `[VERIFY]` Marker im Audit-Log** — drei Module-Funktionen
+  in `ccc.system.audit_log` (`phase_start`, `phase_end`, `verify`) plus
+  Context-Manager `phase` zur Boilerplate-Reduktion (try/except + rc=0/1
+  + re-raise gekapselt). Format Bash↔Python identisch:
+  `<ISO-UTC> [PHASE] <name> start (k=v, ...)` / `[VERIFY] <key>=<value>`.
+  Ein `grep '\[PHASE\]' /var/log/xed-firstboot.log` liefert lückenlosen
+  Run-Forensik-Trail von Bash- bis Python-Layer.
+- **firstboot.sh Bash-Spiegel-Helper** — `phase_start` / `phase_end` /
+  `verify` als Bash-Funktionen via `log_to_file`. Phase 1-4 mit Markern
+  + drei Diagnose-Verify-Checkpoints für pipx-Run-Differenz-Diagnose:
+  `pipx-version` (pipx selbst) + `xed-ccc-installed-version` (via Wheel-
+  Pfad direkt) + `ccc-cli-version` (via Symlink, Ground-truth vor exec).
+- **bootstrap_system.py Composition-Marker** — Outer-Boundary
+  `with phase("ccc:bootstrap-system")` plus 7 Inner-Marker um Phase-
+  Aufrufe (self-heal-dpkg, self-heal-pro-notice, apply-timezone,
+  apply-locales, apply-packages, apply-dist-upgrade, apply-editor).
+  ctx-kwargs als minimal-Diagnose-Daten (tz, count).
+
+### Geändert
+
+- **Audit-Log-Format-Drift bei Verb-Boundary:** `log.info("bootstrap-system
+  start/done")` ersetzt durch Outer-Phase-Marker
+  (`<ISO> [INFO] [PHASE] ccc:bootstrap-system start` / `... end (rc=0)`).
+  Additive-kompatibel mit v0.1.x-Logs (alter String erscheint nicht mehr,
+  aber Log-Pfad + Format-Familie identisch — kein Parser-Bruch erwartet).
+
+### Tests
+
+- 63 pytest-Cases (CCC) grün — 6 neue Cases (4 für `phase_start`/
+  `phase_end`/`verify` in SS6.1, 2 für Context-Manager in SS6.3),
+  kompatibel mit bestehender `cleanup_loggers`-autouse-Fixture.
+
+### Lehrziel + Begründung Minor-Bump
+
+Aufgabe: Run-1-vs-Run-2-pipx-Verhalten auf 5521-pmDESK aus Audit-Log-
+Markern selbst diagnostizierbar machen statt Live-Forensik. Senior-AI037-
+Direktive: Audit-Log-Schema-Erweiterung ist additive Capability (additiv-
+kompatibel mit v0.1.x-Logs), substantiell genug für Minor-Bump statt Patch.
+
+[0.2.0]: https://github.com/XED-dev/CCC/releases/tag/v0.2.0
+
 ## [0.1.1] — 2026-05-06
 
 ### Hinzugefügt (UX-Patch)

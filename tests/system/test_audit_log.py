@@ -1,4 +1,4 @@
-"""Tests fuer ccc.system.audit_log — 4 Cases."""
+"""Tests fuer ccc.system.audit_log — 10 Cases."""
 
 from __future__ import annotations
 
@@ -7,7 +7,13 @@ import re
 
 import pytest
 
-from ccc.system.audit_log import init_audit_log
+from ccc.system.audit_log import (
+    init_audit_log,
+    phase,
+    phase_end,
+    phase_start,
+    verify,
+)
 
 ISO_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \[\w+\] ")
 
@@ -75,3 +81,84 @@ def test_reinit_appends_no_overwrite(tmp_path):
     assert "first run record" in content
     assert "second run record" in content
     assert len(logger.handlers) == handler_count_first
+
+
+# Case 5: phase_start ohne kwargs -> KEIN trailing '(...)' (Format-Robustheit)
+def test_phase_start_no_ctx(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test5")
+    phase_start("Phase-1-apt-install", logger=logger)
+    line = next(
+        ln for ln in log_file.read_text().splitlines()
+        if "[PHASE] Phase-1-apt-install start" in ln
+    )
+    assert line.endswith("[INFO] [PHASE] Phase-1-apt-install start")
+    assert ISO_PATTERN.match(line)
+
+
+# Case 6: phase_start mit kwargs -> ' (k=v, k=v)'-Suffix
+def test_phase_start_with_ctx(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test6")
+    phase_start("Phase-2-pipx", logger=logger, target="xed-ccc", version="0.1.1")
+    line = next(
+        ln for ln in log_file.read_text().splitlines()
+        if "[PHASE] Phase-2-pipx start" in ln
+    )
+    assert line.endswith(
+        "[INFO] [PHASE] Phase-2-pipx start (target=xed-ccc, version=0.1.1)"
+    )
+
+
+# Case 7: phase_end mit rc + ctx
+def test_phase_end_with_rc_and_ctx(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test7")
+    phase_end("Phase-1-apt-install", rc=0, logger=logger, count=5)
+    line = next(
+        ln for ln in log_file.read_text().splitlines()
+        if "[PHASE] Phase-1-apt-install end" in ln
+    )
+    assert line.endswith("[INFO] [PHASE] Phase-1-apt-install end (rc=0, count=5)")
+
+
+# Case 8: verify -> '[VERIFY] <key>=<value>'
+def test_verify_format(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test8")
+    verify("xed-ccc-installed-version", "0.1.1", logger=logger)
+    line = next(
+        ln for ln in log_file.read_text().splitlines()
+        if "[VERIFY]" in ln
+    )
+    assert line.endswith("[INFO] [VERIFY] xed-ccc-installed-version=0.1.1")
+    assert ISO_PATTERN.match(line)
+
+
+# Case 9: phase context-manager Happy-Path -> start + end (rc=0)
+def test_phase_context_happy_path(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test9")
+    with phase("ccc:demo", logger=logger, count=3):
+        pass
+    lines = log_file.read_text().splitlines()
+    start_line = next(ln for ln in lines if "[PHASE] ccc:demo start" in ln)
+    end_line = next(ln for ln in lines if "[PHASE] ccc:demo end" in ln)
+    assert start_line.endswith("[INFO] [PHASE] ccc:demo start (count=3)")
+    assert end_line.endswith("[INFO] [PHASE] ccc:demo end (rc=0)")
+
+
+# Case 10: phase context-manager bei Exception -> end (rc=1) + re-raise
+def test_phase_context_exception_path(tmp_path):
+    log_file = tmp_path / "audit.log"
+    logger = init_audit_log(path=log_file, namespace="test10")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with phase("ccc:demo-fail", logger=logger):
+            raise RuntimeError("boom")
+
+    lines = log_file.read_text().splitlines()
+    start_line = next(ln for ln in lines if "[PHASE] ccc:demo-fail start" in ln)
+    end_line = next(ln for ln in lines if "[PHASE] ccc:demo-fail end" in ln)
+    assert start_line.endswith("[INFO] [PHASE] ccc:demo-fail start")
+    assert end_line.endswith("[INFO] [PHASE] ccc:demo-fail end (rc=1)")

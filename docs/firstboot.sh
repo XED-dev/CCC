@@ -64,6 +64,32 @@ err()  { echo "ERROR: $*" >&2; log_to_file "ERROR" "$*"; }
 info() { echo "→ $*"; log_to_file "INFO" "$*"; }
 ok()   { echo "✔ $*"; log_to_file "OK" "$*"; }
 
+# === PHASE/VERIFY-Marker fuer Run-Differenz-Diagnose ===
+# Format identisch zu Python-Lib ccc.system.audit_log
+# (phase_start/phase_end/verify): ein 'grep "\[PHASE\]" /var/log/xed-firstboot.log'
+# liest Bash- und Python-Marker auf derselben Datei.
+phase_start() {
+    local name="$1"; shift
+    local ctx=""
+    [ $# -gt 0 ] && ctx=" ($*)"
+    log_to_file "PHASE" "${name} start${ctx}"
+}
+
+phase_end() {
+    local name="$1"
+    local rc="${2:-0}"
+    shift 2 || shift $#
+    local extra=""
+    [ $# -gt 0 ] && extra=", $*"
+    log_to_file "PHASE" "${name} end (rc=${rc}${extra})"
+}
+
+verify() {
+    local key="$1"
+    local value="$2"
+    log_to_file "VERIFY" "${key}=${value}"
+}
+
 banner() {
     echo
     echo "================================================================"
@@ -99,6 +125,7 @@ require_supported_distro() {
 # === Phase 1 — apt install Python-Stack + Bootstrap-Pakete ===
 
 bootstrap_apt() {
+    phase_start "firstboot.sh:Phase-1-apt-install"
     info "apt update + Python-Stack + pipx + Bootstrap-Pakete installieren..."
     apt-get update -qq </dev/null
     apt-get install -y -qq --no-install-recommends \
@@ -107,9 +134,12 @@ bootstrap_apt() {
 
     if ! command -v pipx >/dev/null 2>&1; then
         err "pipx nicht verfuegbar nach Install — Bootstrap fehlgeschlagen."
+        phase_end "firstboot.sh:Phase-1-apt-install" 1
         exit 1
     fi
+    verify "pipx-version" "$(pipx --version 2>&1 | head -1)"
     ok "Python-Stack bereit: pipx $(pipx --version 2>&1 | head -1)"
+    phase_end "firstboot.sh:Phase-1-apt-install" 0
 }
 
 # === Phase 2 — pipx install CC-Suite ===
@@ -133,6 +163,7 @@ migrate_old_symlink() {
 }
 
 install_cc_suite() {
+    phase_start "firstboot.sh:Phase-2-pipx-install"
     export PIPX_HOME="$PIPX_HOME_DIR"
     export PIPX_BIN_DIR="$PIPX_BIN_DIR_PATH"
 
@@ -146,11 +177,16 @@ install_cc_suite() {
     # AI037 2026-05-06).
     info "xed-ccc via pipx install --force (idempotent)..."
     pipx install --force xed-ccc
+    # Direkter Wheel-Pfad-Aufruf umgeht PATH-Cache + Symlink-Drift —
+    # zeigt tatsaechlich installierte Version (Run-Differenz-Diagnose).
+    verify "xed-ccc-installed-version" "$(/opt/pipx/venvs/xed-ccc/bin/ccc --version 2>/dev/null | awk '{print $NF}')"
 
     info "xed-cca via pipx install --force (idempotent)..."
     pipx install --force xed-cca
+    verify "xed-cca-installed-version" "$(/opt/pipx/venvs/xed-cca/bin/cca --version 2>/dev/null | awk '{print $NF}')"
 
     ok "CC-Suite bereit: ccc + cca via pipx"
+    phase_end "firstboot.sh:Phase-2-pipx-install" 0
 }
 
 # === Phase 3 — PATH-Fix (pct-enter-Falle) ===
@@ -160,6 +196,7 @@ install_cc_suite() {
 # /etc/bash.bashrc den PATH-Fix. /etc/profile.d/ zusaetzlich fuer Login-Shells.
 # Pattern: reference_path_fix_shell_modes.md (AI035, 2026-05-03).
 setup_path_fix() {
+    phase_start "firstboot.sh:Phase-3-path-fix"
     cat > /etc/profile.d/xed-ccc.sh <<'EOF'
 # XED-CCC: stelle sicher dass /usr/local/bin im PATH ist (Login-Shells).
 case ":$PATH:" in
@@ -181,17 +218,27 @@ esac
 EOF
     fi
     ok "PATH-Fix gesetzt (/etc/profile.d + /etc/bash.bashrc)."
+    phase_end "firstboot.sh:Phase-3-path-fix" 0
 }
 
 # === Phase 4 — Hand-off zu ccc bootstrap-system ===
 
 hand_off_to_ccc() {
+    # KEIN phase_end auf success-Pfad — exec ersetzt Prozess. Hand-off-
+    # Boundary wird durch das nachfolgende '[PHASE] ccc:bootstrap-system
+    # start' im Python-Verb gesetzt (SS6.3-Pendant in bootstrap_system.py).
+    phase_start "firstboot.sh:Phase-4-hand-off"
     if ! "$CCC_BIN_LINK" --version >/dev/null 2>&1; then
         err "ccc nicht aufrufbar: $CCC_BIN_LINK"
         err "  pipx list — Diagnose noetig"
+        phase_end "firstboot.sh:Phase-4-hand-off" 1
         exit 1
     fi
 
+    # Ground-truth-Verifikation: was wird gleich exec't? Vergleich zu
+    # Phase-2 verify gibt zweiten Diagnose-Punkt fuer Symlink/PATH-Drift
+    # zwischen pipx-install und exec.
+    verify "ccc-cli-version" "$($CCC_BIN_LINK --version 2>&1 | awk '{print $NF}')"
     info "Hand-off zu 'ccc bootstrap-system'..."
     info ""
 
