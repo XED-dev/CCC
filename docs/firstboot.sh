@@ -170,19 +170,28 @@ install_cc_suite() {
     migrate_old_symlink "$CCC_BIN_LINK"
     migrate_old_symlink "$CCA_BIN_LINK"
 
-    # pipx install --force: idempotent ohne pipx-list-Detection-Pattern.
-    # Equiv zu upgrade auf neuere Version, no-op auf gleicher Version.
-    # Robuster als 'if pipx list --short | grep | upgrade else install',
-    # weil unabhängig von pipx-Output-Format-Drift (Senior-Schaerfung
-    # AI037 2026-05-06).
-    info "xed-ccc via pipx install --force (idempotent)..."
-    pipx install --force xed-ccc
+    # Pattern-Symmetrie zu AI036 v0.8.4: upgrade-falls-installed,
+    # install-falls-neu. PLUS --pip-args="--no-cache-dir" als Cache-Bypass
+    # gegen pip-HTTP-Cache-Side-Effect (SS6.5-Lehre 2026-05-07: AI037-
+    # Schaerfung 2026-05-06 zu pipx install --force-only war voreilig,
+    # hat den pip-HTTP-Cache-Pfad reaktiviert -> 12-Min-Re-Run-Window).
+    # Belt-and-Suspenders: doppelter Cache-Bypass (Pattern + Flag).
+    info "xed-ccc via pipx (upgrade-or-install, no-cache-dir)..."
+    if pipx list --short 2>/dev/null | grep -q '^xed-ccc '; then
+        pipx upgrade xed-ccc --pip-args="--no-cache-dir"
+    else
+        pipx install xed-ccc --pip-args="--no-cache-dir"
+    fi
     # Direkter Wheel-Pfad-Aufruf umgeht PATH-Cache + Symlink-Drift —
     # zeigt tatsaechlich installierte Version (Run-Differenz-Diagnose).
     verify "xed-ccc-installed-version" "$(/opt/pipx/venvs/xed-ccc/bin/ccc --version 2>/dev/null | awk '{print $NF}')"
 
-    info "xed-cca via pipx install --force (idempotent)..."
-    pipx install --force xed-cca
+    info "xed-cca via pipx (upgrade-or-install, no-cache-dir)..."
+    if pipx list --short 2>/dev/null | grep -q '^xed-cca '; then
+        pipx upgrade xed-cca --pip-args="--no-cache-dir"
+    else
+        pipx install xed-cca --pip-args="--no-cache-dir"
+    fi
     verify "xed-cca-installed-version" "$(/opt/pipx/venvs/xed-cca/bin/cca --version 2>/dev/null | awk '{print $NF}')"
 
     ok "CC-Suite bereit: ccc + cca via pipx"

@@ -5,6 +5,35 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.1] — 2026-05-07
+
+### Behoben (Bug-Fix)
+
+- **Re-Release-Window beim `bash <(curl)`-Selbstheil-Workflow** —
+  `firstboot.sh::install_cc_suite()` verwendet wieder den AI036 v0.8.4-
+  Pattern (`if pipx list ... then pipx upgrade else pipx install`) PLUS
+  `--pip-args="--no-cache-dir"` als doppelten Cache-Bypass.
+
+  Wurzel des Bugs (durch SS6-Marker im Audit-Log diagnostiziert):
+  Senior-Schärfung 2026-05-06 zu `pipx install --force xed-ccc` (ohne
+  Cache-Bypass) hat den pip-HTTP-Cache-Side-Effect (`~/.cache/pip/http/`
+  TTL ~10 Min) wieder aktiviert. Folge: bei kurz aufeinanderfolgenden
+  PyPI-Releases zog Run 1 unmittelbar nach Upload noch die alte Version,
+  Run 2 nach ~12 Min die neue (ursprüngliche AI040-Onboarding §Bug-
+  Beobachtung 2026-05-06).
+
+  AI036's v0.8.4-Pattern hatte dieses Verhalten nicht (DevOps-Erinnerung:
+  „lief zuverlässig in wenigen Minuten") — `pipx upgrade` triggert
+  `pip install --upgrade`-Resolver mit anderem Cache-Pfad-Verhalten,
+  plus jetzt `--no-cache-dir` als deterministischer Bypass.
+
+  Audit-Log [VERIFY]-Marker (SS6.1-3) bleiben als Forensik-Trail aktiv
+  für künftige Diagnose-Cycles. Beweis des Selbstheil-Workflow-Pfades
+  (`bash <(curl)` → SOFORT-v0.2.1 ohne Re-Run-Wait) erfolgt im SS6.5-
+  Live-Test auf 5521-pmDESK nach diesem Release.
+
+[0.2.1]: https://github.com/XED-dev/CCC/releases/tag/v0.2.1
+
 ## [0.2.0] — 2026-05-07
 
 ### Hinzugefügt (Audit-Log-Schema-Erweiterung)
