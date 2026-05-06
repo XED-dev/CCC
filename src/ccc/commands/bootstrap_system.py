@@ -46,6 +46,7 @@ from ccc.commands.phases.locale import (
     apply_timezone,
 )
 from ccc.system import whiptail
+from ccc.system.audit_log import DEFAULT_PATH as AUDIT_LOG_PATH
 from ccc.system.audit_log import init_audit_log
 from ccc.system.i18n import t
 from ccc.system.marker import set_first_run_done
@@ -184,6 +185,24 @@ def bootstrap_system(
     set_first_run_done()
     log.info("bootstrap-system done")
     console.print("[green]✔ bootstrap-system durchgelaufen — Box bereit.[/green]")
+
+    # Hint-Block: Audit-Log-Pfad + Lese-Beispiele + Verb-Uebersicht.
+    # Wartungs-Pfad sichtbar machen — Logs sind A+O des Developer-Lebens
+    # (AI036-Direktive 2026-05-04, Bash-Pattern aus firstboot.sh v0.8.4
+    # bei v0.9.0-Refactor zunaechst weggefallen, in v0.1.1 nachgezogen).
+    audit_log_str = str(AUDIT_LOG_PATH)
+    console.print()
+    console.print(f"[cyan]→ Audit-Log dieses Runs:[/cyan] {audit_log_str}")
+    console.print(f"    tail -50 {audit_log_str}     # letzte 50 Zeilen")
+    console.print(f"    less {audit_log_str}         # vollstaendig durchblaettern")
+    console.print(f"    grep ERROR {audit_log_str}   # nur Fehler-Zeilen")
+    console.print(f"    grep WARN {audit_log_str}    # nur Warnungen")
+    console.print()
+    console.print("[cyan]Verfuegbare Verben:[/cyan]")
+    console.print("    ccc list                # Rollen")
+    console.print("    cca list                # Apps")
+    console.print("    cca install <app>       # z.B. cca install gnome")
+    console.print()
 
 
 def _collect_inputs_interactive(

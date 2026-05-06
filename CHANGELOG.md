@@ -5,6 +5,29 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.1.1] — 2026-05-06
+
+### Hinzugefügt (UX-Patch)
+
+- **Hint-Block am Ende von `ccc bootstrap-system`** — Audit-Log-Pfad +
+  4 grep/tail/less-Beispiele + Verb-Übersicht (`ccc list`, `cca list`,
+  `cca install <app>`). Wartungs-Pfad sichtbar machen — Logs sind A+O
+  des Developer-Lebens (AI036-Direktive 2026-05-04).
+
+### Bug-Fix-Lehre
+
+Beim v0.1.0-Refactor (Bash-Schmal/Python-Breit) wurde der AI036-Hint-Block
+aus `firstboot.sh` v0.8.4 (Z1186-1194) ersatzlos gestrichen + nicht in
+das Python-Verb portiert. SS5-Live-Test 2026-05-06 auf 5521-pmDESK hat
+das Issue gefangen — DevOps hat angemerkt dass der Audit-Log-Pfad-Hinweis
+am Ende fehlt. v0.1.1 zieht den Block ins Python-Verb nach.
+
+Pattern-Anker für Senior-Sweep-Repertoire: bei Bash→Python-Migration nicht
+nur Code-Verhalten, sondern auch UX-Output-Treue prüfen (End-of-Run-Output
++ Hint-Blöcke + Wartungs-Pfade).
+
+[0.1.1]: https://github.com/XED-dev/CCC/releases/tag/v0.1.1
+
 ## [0.1.0] — 2026-05-06
 
 ### Geändert (Major Refactor — Bash-Schmal/Python-Breit)
