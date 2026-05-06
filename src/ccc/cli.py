@@ -16,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ccc._version import __version__
+from ccc.commands.bootstrap_system import bootstrap_system
 from ccc.roles import AVAILABLE_ROLES, get_role
 
 app = typer.Typer(
@@ -144,6 +145,10 @@ def menu() -> None:
         "Proxmox-Webinterface). Bis dahin: nutze `ccc list` + `ccc create <role>`."
     )
     raise typer.Exit(code=2)
+
+
+# bootstrap-system Verb (SS3.5-Migration firstboot.sh Phasen 2-7)
+app.command("bootstrap-system")(bootstrap_system)
 
 
 def main() -> None:

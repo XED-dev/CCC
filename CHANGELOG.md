@@ -5,6 +5,58 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.1.0] — 2026-05-06
+
+### Geändert (Major Refactor — Bash-Schmal/Python-Breit)
+
+- **firstboot.sh-Reduktion 1198 → ~190 Zeilen.** Phasen 2-7 von v0.8.4
+  (TZ/Locales/Pakete/Editor/Dist-Upgrade/Confirm) wandern in das neue
+  Python-Verb `ccc bootstrap-system`. Bash bleibt nur für: Pre-Flight
+  (root + distro) + apt install python3-Stack + pipx install CC-Suite +
+  PATH-Fix + exec ccc bootstrap-system. Archiv-Snapshot
+  `firstboot-v0.8.4.sh.archive` no-deletion-konform im scripts/.
+
+### Hinzugefügt
+
+- **Self-Heal-Lib** in `ccc/system/self_heal/`:
+  - `safe_purge` — apt-get purge mit Cascade-Schutz via `--simulate`-Parsing
+    + Whitelist (verhindert Cascade-Vorfall mit destruktivem Pro-Client-Purge)
+  - `pro_notice` — non-destruktive Ubuntu-Pro-Werbung-Deaktivierung (pro CLI
+    + ESM-Hook-mv .bak + systemctl disable apt-news.service)
+  - `dpkg` Composite — snap-purge + dpkg --configure -a + apt install -f +
+    apt autoremove --purge mit DEBIAN_FRONTEND=noninteractive env
+- **System-Lib** in `ccc/system/`:
+  - `audit_log` — RotatingFileHandler mit ISO-UTC-Format kompatibel zu Bash
+  - `marker` — FIRSTBOOT_MARKER Idempotenz-Helper
+  - `pkg` — dpkg-query + locale-status (drei-wertig: ACTIVE/DISABLED/ABSENT)
+    + Whiptail-Pre-Select-Helper mit first-run-Default-Fallback
+  - `whiptail` — subprocess-Wrapper für TTY-Hybrid-Dialoge
+    (msgbox/yesno/menu/checklist)
+  - `i18n` — DE/EN-Strings-Dict (~55 Keys × 2 Sprachen) mit drei-stufigem
+    Fallback (lang → DEFAULT_LANG → `<missing:key>`-marker)
+- **Phase-Funktionen** in `ccc/commands/phases/`:
+  - `locale.py`: `apply_timezone` + `apply_locales` mit Diff-Logik enable/disable
+  - `apt.py`: `apply_packages` + `apply_dist_upgrade` mit Multi-Mode
+    (interactive/ENV-Override) + Remove-Confirmation
+  - `editor.py`: `apply_editor` (EDITOR=nano in /etc/environment, idempotent)
+- **Verb `ccc bootstrap-system`** mit Whiptail-State-Machine (6 Phasen mit
+  Back-Button + Re-Prompt-bei-leerer-Auswahl + Phase-1-Abort-Confirm +
+  Phase-6-Confirm-No-Back-zu-5). Eingabe-Strategie: Typer-Args mit envvar=
+  oder TTY-Whiptail oder Skript-Defaults.
+
+### Tests
+
+- 57 pytest-Cases (CCC) grün — alle Lib-Module + alle Phase-Funktionen +
+  Verb-Composition + State-Machine-Pfade gemockt-getestet.
+
+### Architektur-Notiz
+
+CC-Suite-Pattern in Stein: firstboot.sh = Bash-Schmal-Bootstrap, ccc/cca =
+Python-Werkzeuge. Plus Lib-Sharing zwischen ccc + cca via Cross-Repo-Imports
+(z.B. `cca.apps.gnome` importiert `ccc.system.self_heal.self_heal_dpkg`).
+
+[0.1.0]: https://github.com/XED-dev/CCC/releases/tag/v0.1.0
+
 ## [0.0.2] — 2026-05-04
 
 ### Geändert
