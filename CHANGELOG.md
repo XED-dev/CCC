@@ -5,6 +5,39 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.2] — 2026-05-07
+
+### Behoben (Bug-Fix — Ubuntu 24.04 Phased-Updates)
+
+- **`apply_dist_upgrade()` skippte phased Pakete still** — Ubuntu 24.04+
+  rollt Updates wellenweise (Phased-Update-Percentage). Default-Verhalten
+  von `apt-get dist-upgrade -y -qq` defernt phased Pakete ohne Diagnose-
+  Output: User klickte Whiptail-`<Yes>`, Phase-Marker zeigte `rc=0`, aber
+  keine Pakete wurden installiert.
+
+  Fix in `phases/apt.py::apply_dist_upgrade()`: explizit
+  `-o APT::Get::Always-Include-Phased-Updates=true` Flag setzen.
+
+  Verifikation auf 5521-pmDESK 2026-05-07: ohne Flag wurden 9 deferred
+  phased Pakete (gnome-shell-Stack + libheif-Stack) skipped, mit Flag
+  installiert. apt's eigene Diagnose-Ausgabe ist die kanonische Quelle:
+
+      The following upgrades have been deferred due to phasing:
+        gnome-shell gnome-shell-common ... libheif1
+      0 aktualisiert, 0 neu installiert, ... 9 nicht aktualisiert.
+
+  Bug ist latent seit firstboot.sh v0.8.4 (Z831 hatte identischen Pattern
+  ohne Flag), manifestiert sich abhängig von Ubuntu's Phasing-Schedule
+  pro Test-Box-Zeitpunkt. Selbstheil-Workflow blieb funktional bis die
+  Audit-Log-Marker (SS6.1-3) den silent-no-op sichtbar machten.
+
+### Tests
+
+- `test_apply_dist_upgrade_with_dist_upgrade_flag` aktualisiert: Assertion
+  prüft jetzt Flag-Präsenz statt strict-prefix-Match. 63/63 grün.
+
+[0.2.2]: https://github.com/XED-dev/CCC/releases/tag/v0.2.2
+
 ## [0.2.1] — 2026-05-07
 
 ### Behoben (Bug-Fix)

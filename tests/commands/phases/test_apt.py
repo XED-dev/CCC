@@ -78,6 +78,10 @@ def test_apply_dist_upgrade_with_dist_upgrade_flag(mock_run):
     apply_dist_upgrade(dist_upgrade=True)
     # 4 subprocess: apt list + 3 apt-Schritte
     assert mock_run.call_count == 4
-    assert mock_run.call_args_list[1].args[0][:2] == ["apt-get", "dist-upgrade"]
+    # dist-upgrade-Args: apt-get + -o APT::...Phased-Updates=true + dist-upgrade
+    dist_upgrade_args = mock_run.call_args_list[1].args[0]
+    assert dist_upgrade_args[0] == "apt-get"
+    assert "dist-upgrade" in dist_upgrade_args
+    assert "APT::Get::Always-Include-Phased-Updates=true" in dist_upgrade_args
     assert mock_run.call_args_list[2].args[0][:2] == ["apt-get", "autoremove"]
     assert mock_run.call_args_list[3].args[0][:2] == ["apt-get", "autoclean"]

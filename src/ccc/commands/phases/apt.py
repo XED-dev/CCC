@@ -152,8 +152,17 @@ def apply_dist_upgrade(
         return
 
     log.info("apt dist-upgrade ausfuehren...")
+    # APT::Get::Always-Include-Phased-Updates=true: Ubuntu 24.04+ rollt
+    # Updates wellenweise aus (Phased-Update-Percentage). Default-Verhalten
+    # von apt-get dist-upgrade -y skippt phased Pakete still ohne Diagnose-
+    # Output -> User klickt Yes, sieht aber keine Aktion. Bug-Diagnose
+    # 2026-05-07 auf 5521-pmDESK: 9 phased Pakete (gnome-shell-stack +
+    # heif-stack) deferred, mit Flag installiert. Latent seit firstboot.sh
+    # v0.8.4 (Z831 hatte identischen Pattern ohne Flag).
     subprocess.run(
-        ["apt-get", "dist-upgrade", "-y", "-qq"],
+        ["apt-get",
+         "-o", "APT::Get::Always-Include-Phased-Updates=true",
+         "dist-upgrade", "-y", "-qq"],
         check=True, env=env, stdin=subprocess.DEVNULL,
     )
     log.info("apt autoremove...")
