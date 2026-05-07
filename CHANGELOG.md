@@ -40,30 +40,48 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [0.2.1] — 2026-05-07
 
-### Behoben (Bug-Fix)
+### Geändert (Pattern-Switch zurück zu v0.8.4-Style)
 
-- **Re-Release-Window beim `bash <(curl)`-Selbstheil-Workflow** —
-  `firstboot.sh::install_cc_suite()` verwendet wieder den AI036 v0.8.4-
-  Pattern (`if pipx list ... then pipx upgrade else pipx install`) PLUS
-  `--pip-args="--no-cache-dir"` als doppelten Cache-Bypass.
+- **`firstboot.sh::install_cc_suite()`** zurück zum AI036 v0.8.4-Pattern
+  (`if pipx list ... then pipx upgrade else pipx install`) PLUS
+  `--pip-args="--no-cache-dir"`-Flag.
+  Senior-Schärfung 2026-05-06 zu `pipx install --force` ist damit
+  zurückgenommen — `pipx upgrade` ist semantisch sauberer („falls neuere
+  Version, zieh sie") als `pipx install --force` („immer reinstallieren").
+  Code-Switch ist akzeptabel, war aber **nicht der Bug-Fix den die v0.2.1-
+  Releasenotes zunächst behauptet hatten** (siehe Korrektur unten).
 
-  Wurzel des Bugs (durch SS6-Marker im Audit-Log diagnostiziert):
-  Senior-Schärfung 2026-05-06 zu `pipx install --force xed-ccc` (ohne
-  Cache-Bypass) hat den pip-HTTP-Cache-Side-Effect (`~/.cache/pip/http/`
-  TTL ~10 Min) wieder aktiviert. Folge: bei kurz aufeinanderfolgenden
-  PyPI-Releases zog Run 1 unmittelbar nach Upload noch die alte Version,
-  Run 2 nach ~12 Min die neue (ursprüngliche AI040-Onboarding §Bug-
-  Beobachtung 2026-05-06).
+### Korrektur 2026-05-07 — Wurzel-Analyse war faktisch falsch
 
-  AI036's v0.8.4-Pattern hatte dieses Verhalten nicht (DevOps-Erinnerung:
-  „lief zuverlässig in wenigen Minuten") — `pipx upgrade` triggert
-  `pip install --upgrade`-Resolver mit anderem Cache-Pfad-Verhalten,
-  plus jetzt `--no-cache-dir` als deterministischer Bypass.
+Initial-Releasenotes von v0.2.1 (am gleichen Tag, später korrigiert):
+hatten den „Re-Run-Window beim `bash <(curl)`"-Bug auf einen
+**pip-HTTP-Cache-Side-Effect** (`~/.cache/pip/http/` TTL ~10 Min)
+zurückgeführt. Diese These widerspricht der empirischen Beobachtung
+auf 5521-pmDESK 2026-05-07 (SS6.5-Live-Test): auch nach v0.2.1-Release
+mit `--no-cache-dir`-Flag trat das Re-Run-Window weiter auf, wartezeit-
+unabhängig (5 Min wie 20 Min identisch).
 
-  Audit-Log [VERIFY]-Marker (SS6.1-3) bleiben als Forensik-Trail aktiv
-  für künftige Diagnose-Cycles. Beweis des Selbstheil-Workflow-Pfades
-  (`bash <(curl)` → SOFORT-v0.2.1 ohne Re-Run-Wait) erfolgt im SS6.5-
-  Live-Test auf 5521-pmDESK nach diesem Release.
+**Echte Wurzel** (Web-Search nach DevOps-Direktive: zuerst Community
+fragen, nicht Code spekulativ ändern): **PyPI-Fastly-CDN-Stale-Backend-
+Pattern.** PyPI nutzt Fastly mit mehreren Backend-Servern, deren Cache
+asynchron + unabhängig invalidiert. DNS-Round-Robin verteilt Requests
+an `pypi.org`-IPs an Backends mit unterschiedlichem Cache-Stand. Run 1
+trifft mit gewisser Wahrscheinlichkeit ein stale-Backend, Run 2 ein
+fresh-Backend — wartezeit-unabhängig, weil Backends nicht zeit-gebunden
+invalidieren. Quelle: Plone-Community-Diskussion 2018, warehouse-Issue
+\#11949.
+
+**Konsequenz:** der Bug ist **client-side nicht fixbar**. `--no-cache-dir`
+hilft nicht (bypasst nur lokalen pip-Cache, nicht Server-side CDN).
+Der Pattern-Switch zu `pipx upgrade` ist trotzdem sauberer Code, aber
+nicht der versprochene Workaround. Folge-Plan SS7: transparente Version-
+Auswahl-UX in `bootstrap-system` (User klickt „Suche neue Version" so
+oft bis erwartete Version sichtbar — Cache-Realität wird sichtbar
+gemacht statt versteckt).
+
+Memory-Anker: `feedback_investigations_hierarchy.md` (Senior-Direktive
+„WebSearch zuerst, Code-Iterationen zuletzt") + `reference_pypi_initial_
+upload_token_scope.md` Anhang 2026-05-07 (PyPI-Fastly-CDN-Pattern).
 
 [0.2.1]: https://github.com/XED-dev/CCC/releases/tag/v0.2.1
 
