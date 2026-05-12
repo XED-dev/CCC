@@ -1,23 +1,21 @@
 #!/bin/bash
-# firstboot.sh v0.9.0 — cBOX@ /Container Control Bash-Schmal-Bootstrap
+# firstboot.sh v0.9.1 — cBOX@ /Container Control Bash-Schmal-Bootstrap
 #
 # Quelle:    https://github.com/XED-dev/CCC
 # Aufruf:    bash <(curl -s https://ccc.xed.dev/firstboot.sh)
 # Lokal:     bash firstboot.sh
 #
-# Was es tut (~150 Zeilen statt 1198 in v0.8.4):
-#   Phase 0 — Pre-Flight (root + distro + Audit-Log-Init)
-#   Phase 1 — apt install python3-Stack + pipx + Bootstrap-Pakete
-#   Phase 2 — pipx install xed-ccc + xed-cca (system-wide via PIPX_HOME)
-#   Phase 3 — PATH-Fix (/etc/profile.d + /etc/bash.bashrc, pct-enter-Falle)
-#   Phase 4 — exec /usr/local/bin/ccc bootstrap-system "$@"
+# Was es tut (~200 Zeilen statt 1198 in v0.8.4):
+#   Phase 0   — Pre-Flight (root + distro + Audit-Log-Init)
+#   Phase 1   — apt install python3-Stack + pipx + Bootstrap-Pakete
+#   Phase 2   — pipx install xed-ccc + xed-cca mit Version-Pin (PyPI-API)
+#   Phase 2.5 — Version-Verify mit User-Agency (Edge-Case-Recovery)
+#   Phase 3   — PATH-Fix (/etc/profile.d + /etc/bash.bashrc, pct-enter-Falle)
+#   Phase 4   — exec /usr/local/bin/ccc bootstrap-system "$@"
 #
 # Phasen 2-7 von v0.8.4 (TZ/Locales/Pakete/Editor/Dist-Upgrade/Confirm) wandern
 # in das ccc-Python-Verb 'bootstrap-system'. ENV-Vars (TZ, LOCALES, ...) werden
 # via exec durchgereicht. Whiptail-State-Machine + i18n laufen in Python.
-#
-# Archiv von v0.8.4: scripts/firstboot-v0.8.4.sh.archive (1:1-Snapshot,
-# no-deletion-konform, falls jemand v0.8.4-Verhalten reproduzieren muss).
 #
 # Lizenz: MIT (siehe LICENSE im XED-dev/CCC-Repo)
 
@@ -26,7 +24,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 # === Globals ===
 
-VERSION="0.9.0"
+VERSION="0.9.1"
 SCRIPT_NAME="firstboot.sh"
 FIRSTBOOT_LOG_FILE="/var/log/xed-firstboot.log"
 
@@ -37,6 +35,9 @@ PIPX_BIN_DIR_PATH="/usr/local/bin"
 
 CCC_BIN_LINK="/usr/local/bin/ccc"
 CCA_BIN_LINK="/usr/local/bin/cca"
+
+# v0.9.1: User-Agency-Box Max-Retries-Cap (verify_version_with_user_agency).
+VERIFY_MAX_RETRIES=5
 
 # === Output-Helpers + Audit-Log ===
 
@@ -162,6 +163,68 @@ migrate_old_symlink() {
     esac
 }
 
+# === Phase 2 helpers — Version-Quellen (param-driven für ccc + cca) ===
+
+# Bootstrap-Distribution-Pattern: Initial-Install mit Version-Pin via
+# PyPI-API-Query. Pin umgeht pipx < 1.3.0 fehlendes automatic
+# --force-reinstall-Forwarding (Ubuntu 22.04 Default ist pipx 1.0.0).
+# Quelle: pipx CHANGELOG (https://pipx.pypa.io/stable/changelog/) —
+# „pipx 1.3.0 (Feb 2024): Force now implies --force-reinstall to pip".
+# Stdlib-Reflex: python3 ist nach Phase-1-apt verfuegbar.
+# Pattern aus cci v0.0.6 — Memory: reference_pipx_force_version_pin.md.
+
+_pipx_installed_version() {
+    local pkg="$1"
+    pipx list --json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    print(json.load(sys.stdin)['venvs']['$pkg']['metadata']['main_package']['package_version'])
+except (KeyError, json.JSONDecodeError):
+    pass
+" 2>/dev/null
+}
+
+_pypi_latest_version() {
+    local pkg="$1"
+    curl -sSf --max-time 10 \
+        -H "User-Agent: xed-ccc-firstboot/${VERSION}" \
+        "https://pypi.org/pypi/${pkg}/json" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    print(json.load(sys.stdin)['info']['version'])
+except (KeyError, json.JSONDecodeError):
+    pass
+" 2>/dev/null
+}
+
+# install_one_package: param-driven install mit Version-Pin + Fallback
+# bei PyPI-API-Fail + Verify-Marker + User-Agency-Aufruf. Per-Paket-
+# Aufruf für ccc + cca (saubere Edge-Case-Trennung).
+
+install_one_package() {
+    local pkg="$1"
+    local latest
+    latest=$(_pypi_latest_version "$pkg")
+    if [ -n "$latest" ]; then
+        info "${pkg} via pipx install --force ${pkg}==${latest}..."
+        pipx install --force "${pkg}==${latest}" --pip-args="--no-cache-dir"
+    else
+        info "${pkg} via pipx install --force (PyPI-Check failed, Fallback ohne Pin)..."
+        pipx install --force "$pkg" --pip-args="--no-cache-dir"
+    fi
+    ok "${pkg} installiert via pipx"
+
+    # Direkter Wheel-Pfad-Aufruf umgeht PATH-Cache + Symlink-Drift —
+    # zeigt tatsaechlich installierte Version (Run-Differenz-Diagnose).
+    local tool_name="${pkg#xed-}"  # xed-ccc -> ccc, xed-cca -> cca
+    verify "${pkg}-installed-version" "$(/opt/pipx/venvs/"${pkg}"/bin/"${tool_name}" --version 2>/dev/null | awk '{print $NF}')"
+
+    # SS7-Adaption: User-Agency-Box bei Edge-Cases (PyPI-API down, oder
+    # PyPI-Drift zwischen Install und Verify). System luegt nicht statt
+    # Cache-Hide-Magie.
+    verify_version_with_user_agency "$pkg"
+}
+
 install_cc_suite() {
     phase_start "firstboot.sh:Phase-2-pipx-install"
     export PIPX_HOME="$PIPX_HOME_DIR"
@@ -170,32 +233,82 @@ install_cc_suite() {
     migrate_old_symlink "$CCC_BIN_LINK"
     migrate_old_symlink "$CCA_BIN_LINK"
 
-    # Pattern-Symmetrie zu AI036 v0.8.4: upgrade-falls-installed,
-    # install-falls-neu. PLUS --pip-args="--no-cache-dir" als Cache-Bypass
-    # gegen pip-HTTP-Cache-Side-Effect (SS6.5-Lehre 2026-05-07: AI037-
-    # Schaerfung 2026-05-06 zu pipx install --force-only war voreilig,
-    # hat den pip-HTTP-Cache-Pfad reaktiviert -> 12-Min-Re-Run-Window).
-    # Belt-and-Suspenders: doppelter Cache-Bypass (Pattern + Flag).
-    info "xed-ccc via pipx (upgrade-or-install, no-cache-dir)..."
-    if pipx list --short 2>/dev/null | grep -q '^xed-ccc '; then
-        pipx upgrade xed-ccc --pip-args="--no-cache-dir"
-    else
-        pipx install xed-ccc --pip-args="--no-cache-dir"
-    fi
-    # Direkter Wheel-Pfad-Aufruf umgeht PATH-Cache + Symlink-Drift —
-    # zeigt tatsaechlich installierte Version (Run-Differenz-Diagnose).
-    verify "xed-ccc-installed-version" "$(/opt/pipx/venvs/xed-ccc/bin/ccc --version 2>/dev/null | awk '{print $NF}')"
-
-    info "xed-cca via pipx (upgrade-or-install, no-cache-dir)..."
-    if pipx list --short 2>/dev/null | grep -q '^xed-cca '; then
-        pipx upgrade xed-cca --pip-args="--no-cache-dir"
-    else
-        pipx install xed-cca --pip-args="--no-cache-dir"
-    fi
-    verify "xed-cca-installed-version" "$(/opt/pipx/venvs/xed-cca/bin/cca --version 2>/dev/null | awk '{print $NF}')"
+    install_one_package "xed-ccc"
+    install_one_package "xed-cca"
 
     ok "CC-Suite bereit: ccc + cca via pipx"
     phase_end "firstboot.sh:Phase-2-pipx-install" 0
+}
+
+# === Phase 2.5 — Version-Verify mit User-Agency (SS7-Adaption aus cci v0.0.6) ===
+
+# Pattern-Anker: „System luegt nicht statt Cache-Hide-Magie."
+# Default ist IMMER Update auf PyPI-latest (User-Intent von `bash <(curl)`).
+# [k] erlaubt User explizit „bei installierter bleiben". [n] abbrechen.
+# Max-Retries-Cap gegen Infinite-Loop. Defense-Recovery bei Check-Failure.
+
+verify_version_with_user_agency() {
+    local pkg="$1"
+    local retry_count=0
+    while true; do
+        local installed latest
+        installed=$(_pipx_installed_version "$pkg")
+        latest=$(_pypi_latest_version "$pkg")
+
+        # Defense-Recovery: bei Check-Failure einfach weiter (kein Block).
+        if [ -z "$installed" ]; then
+            warn "${pkg}: Installed-Version-Check failed — weiter ohne Verify."
+            return 0
+        fi
+        if [ -z "$latest" ]; then
+            warn "${pkg}: PyPI-Check failed (Netzwerk/Timeout) — weiter mit installed v${installed}."
+            return 0
+        fi
+
+        # Match — OK.
+        if [ "$installed" = "$latest" ]; then
+            ok "${pkg} Version-Match: v${installed} (installed = PyPI latest)"
+            return 0
+        fi
+
+        # Max-Retries erreicht — Resignation mit Warning (System luegt nicht).
+        if [ "$retry_count" -ge "$VERIFY_MAX_RETRIES" ]; then
+            warn "${pkg} Max-Retries (${VERIFY_MAX_RETRIES}) erreicht — installed v${installed} bleibt (PyPI latest waere v${latest})."
+            return 0
+        fi
+
+        # Versions-Divergenz — User-Agency mit Default=Update.
+        echo
+        echo "  ┌─ Versions-Divergenz ──────────────────────────────────────┐"
+        printf "  │ Paket: %-51s│\n" "${pkg}"
+        printf "  │ Installiert: v%-44s│\n" "${installed}"
+        printf "  │ PyPI latest: v%-44s│\n" "${latest}"
+        echo "  │ Ursache: pipx < 1.3.0 fehlt automatic --force-reinstall.  │"
+        echo "  └───────────────────────────────────────────────────────────┘"
+        echo
+        echo "  [Y] Auf v${latest} updaten  (Default — empfohlen)"
+        echo "  [k] Bei v${installed} bleiben"
+        echo "  [n] Abbrechen"
+        echo
+        local response=""
+        read -r -p "  Auswahl [Y/k/n]: " response
+        case "${response:-Y}" in
+            [Kk])
+                ok "${pkg} User-Wahl [k]: bei v${installed} bleiben."
+                return 0
+                ;;
+            [Nn])
+                err "${pkg} User-Wahl [n]: Abbrechen."
+                exit 1
+                ;;
+            *)
+                # Default + unklare Auswahl → Update (User-Intent-konform).
+                retry_count=$((retry_count + 1))
+                info "${pkg} Update ${retry_count}/${VERIFY_MAX_RETRIES}: pipx install --force ${pkg}==${latest}..."
+                pipx install --force "${pkg}==${latest}" --pip-args="--no-cache-dir"
+                ;;
+        esac
+    done
 }
 
 # === Phase 3 — PATH-Fix (pct-enter-Falle) ===

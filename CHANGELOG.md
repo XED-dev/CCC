@@ -5,6 +5,58 @@ Alle bemerkenswerten Änderungen an `xed-ccc` werden hier dokumentiert.
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.3] — 2026-05-12
+
+### Behoben (Version-Pin-Pattern in firstboot.sh — Cache-Bug-Bereinigung)
+
+- **`docs/firstboot.sh::install_cc_suite()` umgestellt auf
+  `pipx install --force <pkg>==<latest>` mit PyPI-API-Version-Pin für
+  BEIDE Pakete (xed-ccc + xed-cca).**
+  v0.9.0 nutzte `pipx upgrade-or-install`-Pattern mit
+  `--pip-args="--no-cache-dir"` als Cache-Bypass. Live-Use-Case auf
+  Ubuntu 22.04 (pipx 1.0.0 Default) zeigte: `--no-cache-dir` bypasst
+  nur HTTP-Cache, NICHT lokale pip-wheel-Cache, plus pipx 1.0.0 leitet
+  `--force` NICHT automatisch als `--force-reinstall` an pip weiter.
+  Quelle: pipx CHANGELOG (https://pipx.pypa.io/stable/changelog/) —
+  „pipx 1.3.0 (Februar 2024): Force now implies --force-reinstall to
+  pip arguments." Ubuntu 22.04 Default = pipx 1.0.0 (2022).
+
+  **Lösung:** Explicit Version-Pin via PyPI JSON-API
+  (`pipx install --force xed-ccc==<latest>`) umgeht den --force-Same-
+  Version-Bug strukturell. Plus Fallback ohne Pin bei PyPI-API-Fail.
+  Plus `verify_version_with_user_agency()` als User-Agency-Box bei
+  Edge-Cases (PyPI-Drift zwischen Install und Verify).
+  Pattern aus cci v0.0.6 — Memory `reference_pipx_force_version_pin.md`.
+
+- **`docs/firstboot.sh`: Param-driven Helper `_pypi_latest_version(pkg)`
+  + `_pipx_installed_version(pkg)`.** Generic für ccc + cca, eliminiert
+  Code-Duplikation. Stdlib-Reflex: python3-Heredoc statt jq.
+
+- **`docs/firstboot.sh`: Per-Paket-Aufruf von
+  `verify_version_with_user_agency()` (Q3 Vote A — saubere Edge-Case-
+  Trennung).** Bei beiden Paketen matchend: keine Box, interaktionslos.
+  Bei einem Paket divergent: gezieltes Box-Prompt nur für dieses Paket.
+
+- **`docs/firstboot.sh` VERSION sync mit Tool-Version** (0.9.0 → 0.9.1).
+  Plus Header-Comment-Block: Phase 2 + Phase 2.5 explizit benannt.
+
+### Mitversorgung cca v0.0.5
+
+cca-Distribution profitiert automatisch durch ccc's firstboot.sh-Update —
+KEINE cca-Code-Änderung in v0.2.3. cca-Sprint für UX-Pattern-Übertragung
+ist Backlog für AI044 oder Folgegeneration (DevOps-Scope-Direktive
+2026-05-12: EIN-Sprint Cache-Fix-Only, UX-Polish deprioritisiert).
+
+### Pattern-Anker
+
+Bootstrap-Distribution-Pattern für mehrere Pakete: param-driven Helper
++ per-Paket-Verify-Aufruf. Pattern-Symmetrie zu cci v0.0.6 (Memory:
+reference_pipx_force_version_pin.md). Plus Pension-Auftrag-File-Scope-
+Klärung als Senior-Disziplin-Anker (Sprint-Anker AI043 Side-Track
+2026-05-12).
+
+[0.2.3]: https://github.com/XED-dev/CCC/releases/tag/v0.2.3
+
 ## [0.2.2] — 2026-05-07
 
 ### Behoben (Bug-Fix — Ubuntu 24.04 Phased-Updates)
